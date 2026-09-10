@@ -8,7 +8,7 @@ An authenticated single-page chat application that invokes a Microsoft Foundry p
 Browser SPA
   |  delegated Entra token
   v
-Express web host
+FastAPI web host
   |  delegated Entra token + server-side APIM subscription key
   v
 APIM POST /responses
@@ -26,9 +26,9 @@ APIM MCP endpoint
 Azure MCP Server
 ```
 
-The browser uses authorization code with PKCE and calls the same-origin `/api/responses` endpoint. Express validates the delegated token, adds the server-held APIM subscription key, and forwards the request to APIM.
+The browser uses authorization code with PKCE and calls the same-origin `/api/responses` endpoint. FastAPI validates the delegated token, adds the server-held APIM subscription key, and forwards the request to APIM.
 
-The signed-in user's token authorizes both the Express proxy and the APIM Responses operation. APIM injects a fixed `agent_reference`, replaces the user credential with its managed-identity token, and forwards the request to Foundry. The user token never reaches Foundry.
+The signed-in user's token authorizes both the FastAPI proxy and the APIM Responses operation. APIM injects a fixed `agent_reference`, replaces the user credential with its managed-identity token, and forwards the request to Foundry. The user token never reaches Foundry.
 
 No client secret is required.
 
@@ -103,7 +103,7 @@ When the APIM API or product requires a subscription, the SPA sends:
 Ocp-Apim-Subscription-Key: <key>
 ```
 
-The key is stored only in the server environment and is added by Express when forwarding to APIM. It is not returned through `/api/config` or included in the browser bundle. Entra JWT validation remains the authorization boundary.
+The key is stored only in the server environment and is added by FastAPI when forwarding to APIM. It is not returned through `/api/config` or included in the browser bundle. Entra JWT validation remains the authorization boundary.
 
 ## Configuration
 
@@ -118,19 +118,26 @@ cp .env.example .env
 | `ENTRA_API_SCOPE` | Complete delegated scope, such as `api://<API-client-id>/access_as_user` |
 | `APIM_RESPONSES_URL` | Complete APIM URL for `POST /responses` |
 | `APIM_SUBSCRIPTION_KEY` | Server-side APIM product subscription key; never exposed through public runtime configuration |
-| `PORT` | Express port; defaults to `3000` |
-| `NODE_ENV` | Express runtime environment |
+| `PORT` | FastAPI port; defaults to `3000` |
 
 Only `ENTRA_TENANT_ID`, `ENTRA_SPA_CLIENT_ID`, and `ENTRA_API_SCOPE` are delivered to the SPA by `/api/config`. The APIM URL and subscription key remain server-side.
 
 ## Run locally
 
 ```bash
-npm install
-npm run dev
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+npm ci
+npm run build
+python -m app.main
 ```
 
 Open <http://localhost:3000>.
+
+Node.js is used only to bundle MSAL Browser and the SPA JavaScript. The application server and APIM proxy run in Python.
+
+For client-side development, run `npm run dev:client` in a second terminal while FastAPI is running.
 
 The UI provides:
 
@@ -144,6 +151,7 @@ The UI provides:
 
 ```bash
 npm run check
+python -m compileall app
 docker build .
 ```
 
@@ -157,13 +165,27 @@ The included Dockerfile can run on Azure Container Apps, App Service, or another
 4. Configure the health probe to call `/health`.
 5. Ensure the host can make outbound HTTPS calls to Microsoft Entra endpoints.
 
-The web host is stateless and can run with multiple replicas. For a non-container source deployment, run `npm run build` before `npm start`.
+The web host is stateless and can run with multiple replicas.
+
+For Azure Container Apps, build and deploy the included Dockerfile. For Azure App Service, either deploy the same container or use a Python source deployment with this startup command:
+
+```text
+python -m app.main
+```
+
+Run `npm ci && npm run build` before a non-container source deployment so `public/app.js` exists.
+
+If your environment requires a Python package proxy, pass it without storing credentials in the Dockerfile:
+
+```bash
+docker build --build-arg PIP_INDEX_URL=https://<package-proxy>/pypi/simple/ .
+```
 
 ## Troubleshooting
 
-### No Express request logs for an agent error
+### No FastAPI request logs for an agent error
 
-Inspect the Express logs, the browser request to `/api/responses`, and APIM Application Insights telemetry.
+Inspect the FastAPI logs, the browser request to `/api/responses`, and APIM Application Insights telemetry.
 
 ### `401 AzureApiManagementKey`
 

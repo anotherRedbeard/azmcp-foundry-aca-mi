@@ -20,7 +20,7 @@ expanded identity, security, telemetry, and troubleshooting guidance.
 Browser SPA
   |  Entra delegated token
   v
-Express web host
+FastAPI web host
   |  Entra delegated token + server-side APIM subscription key
   v
 APIM: POST /responses
@@ -47,8 +47,8 @@ The editable architecture diagram is available at [foundry-apim-mcp-architecture
 
 | Call | Caller identity | Authorization |
 |---|---|---|
-| Browser → Express | Signed-in user through the SPA registration | Delegated `access_as_user` scope validated by the web host |
-| Express → Agent APIM | Signed-in user token plus server-held APIM subscription key | APIM repeats JWT validation and applies product membership and quotas |
+| Browser → FastAPI | Signed-in user through the SPA registration | Delegated `access_as_user` scope validated by the web host |
+| FastAPI → Agent APIM | Signed-in user token plus server-held APIM subscription key | APIM repeats JWT validation and applies product membership and quotas |
 | Agent APIM → Foundry | APIM system-managed identity | Foundry project role, such as **Foundry User** |
 | Foundry → MCP APIM | Foundry project managed identity | `Mcp.Tools.ReadWrite.All` application role exposed by the MCP Entra application |
 | MCP APIM → Container App | APIM system-managed identity | `Mcp.Tools.ReadWrite.All` application role |
@@ -84,13 +84,13 @@ The `arm` namespace provides access to the hosted Azure Resource Manager MCP too
 
 - MSAL Browser authorization-code flow with PKCE
 - No browser or server-side client secret
-- Same-origin browser calls to an authenticated Express proxy
+- Same-origin browser calls to an authenticated FastAPI proxy
 - Server-side APIM subscription-key injection
 - Foundry Responses API multi-turn state using `previous_response_id`
-- Static Express host with `/api/config` and `/health`
+- Static FastAPI host with `/api/config` and `/health`
 - Docker support for Azure Container Apps or App Service
 
-Express validates the delegated token before proxying the request. APIM repeats authorization at the gateway boundary and applies product policy.
+FastAPI validates the delegated token before proxying the request. APIM repeats authorization at the gateway boundary and applies product policy.
 
 ## Prerequisites
 
@@ -98,7 +98,8 @@ Express validates the delegated token before proxying the request. APIM repeats 
 - Microsoft Foundry project with a prompt agent
 - Existing Azure API Management instance with a system-managed identity
 - [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
-- Node.js 20 or later for the web application
+- Python 3.11 or later for the web host
+- Node.js 20 or later to bundle the browser application
 - Permission to create or configure Entra application registrations and application-role assignments
 
 ## Deploy Azure MCP Server
@@ -151,7 +152,7 @@ https://<foundry-resource>.services.ai.azure.com/api/projects/<project>/openai/v
 
 Grant the APIM managed identity the required role on the Foundry project.
 
-The Express proxy sends:
+The FastAPI proxy sends:
 
 ```http
 Authorization: Bearer <delegated-user-token>
@@ -236,8 +237,12 @@ APIM can inspect JSON-RPC POST requests and trace `params.name` when `method` is
 ```bash
 cd agent-web-app
 cp .env.example .env
-npm install
-npm run dev
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+npm ci
+npm run build
+python -m app.main
 ```
 
 Open <http://localhost:3000>. See the [web application README](agent-web-app/README.md) for Entra registration and deployment details.
@@ -249,6 +254,7 @@ Validate the web application:
 ```bash
 cd agent-web-app
 npm run check
+python -m compileall app
 docker build .
 ```
 
