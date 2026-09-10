@@ -76,7 +76,12 @@ module acaInfrastructure 'modules/aca-infrastructure.bicep' = {
     azureMcpCollectTelemetry: string(!empty(appInsights.outputs.connectionString))
     azureAdTenantId: tenant().tenantId
     azureAdClientId: entraApp.outputs.entraAppClientId
-    namespaces: ['storage']
+    namespaces: [
+      'storage'
+      'subscription'
+      'group'
+      'arm'
+    ]
   }
 }
 

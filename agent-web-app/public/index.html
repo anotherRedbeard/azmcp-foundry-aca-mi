@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Azure Agent Console</title>
+    <script>
+      (() => {
+        const param = new URLSearchParams(window.location.search).get("scoutTheme");
+        const theme =
+          param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">A</div>
+          <div>
+            <span class="brand-kicker">Microsoft Foundry</span>
+            <h1>Azure Agent</h1>
+          </div>
+        </div>
+        <div id="account-actions" class="account-actions"></div>
+      </header>
+
+      <section id="signed-out" class="welcome-card" hidden>
+        <div class="welcome-copy">
+          <div class="welcome-mark" aria-hidden="true">A</div>
+          <h2>Start a conversation</h2>
+          <p>
+            Sign in with your organization account to talk to your Azure agent.
+          </p>
+          <button id="sign-in-button" class="button primary" type="button">
+            Sign in with Microsoft Entra
+          </button>
+        </div>
+      </section>
+
+      <section id="chat-panel" class="chat-panel" hidden>
+        <div id="messages" class="messages" aria-live="polite">
+          <div class="message-list">
+            <article class="message assistant">
+              <div class="avatar">A</div>
+              <div class="bubble">
+                <p class="message-label">Agent</p>
+                <p>How can I help you explore your Azure environment?</p>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <form id="chat-form" class="composer">
+          <div class="composer-inner">
+            <label class="sr-only" for="message">Message the agent</label>
+            <div class="composer-row">
+              <textarea
+                id="message"
+                name="message"
+                rows="1"
+                maxlength="8000"
+                placeholder="Ask about your Azure environment..."
+                required
+              ></textarea>
+              <button id="send-button" class="send-button" type="submit">
+                <span>Send</span>
+                <span aria-hidden="true">↑</span>
+              </button>
+            </div>
+            <p id="form-status" class="form-status" role="status"></p>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

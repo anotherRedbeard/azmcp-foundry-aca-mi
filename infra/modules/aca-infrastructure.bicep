@@ -34,9 +34,9 @@ param azureAdTenantId string
 @description('Azure AD Client ID')
 param azureAdClientId string
 
-@description('Azure MCP Server namespaces to enable. Must specify at least one namespace and no more than three.')
+@description('Azure MCP Server namespaces to enable. Must specify at least one namespace and no more than four.')
 @minLength(1)
-@maxLength(3)
+@maxLength(4)
 param namespaces array
 
 var baseArgs = [
@@ -140,10 +140,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_LOG_LEVEL'
               value: 'Verbose'
             }
-            // SECURITY NOTE: AZURE_MCP_DANGEROUSLY_DISABLE_HTTPS_REDIRECTION is set to 'true' because the Azure MCP Server 
+            // SECURITY NOTE: AZURE_MCP_DANGEROUSLY_DISABLE_HTTPS_REDIRECTION is set to 'true' because the Azure MCP Server
             // listens on HTTP 'internally' within the Container App pod (port 8080). 'External' traffic is HTTPS-only (allowInsecure=false),
-            // and the Container Apps Envoy proxy terminates HTTPS at the ingress boundary, then routes to the container over HTTP 
-            // within the secure pod network namespace. This HTTP traffic never leaves the pod, ensuring end-to-end encryption for 
+            // and the Container Apps Envoy proxy terminates HTTPS at the ingress boundary, then routes to the container over HTTP
+            // within the secure pod network namespace. This HTTP traffic never leaves the pod, ensuring end-to-end encryption for
             // external communication while allowing efficient internal routing.
             // See https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview
             {
@@ -191,4 +191,3 @@ output containerAppUrl string = 'https://${containerApp.properties.configuration
 output containerAppName string = containerApp.name
 output containerAppPrincipalId string = containerApp.identity.principalId
 output containerAppEnvironmentId string = containerAppsEnvironment.id
-

@@ -1,120 +1,320 @@
-# Azure MCP Server - ACA with Managed Identity
+# Secure Foundry Agent and Azure MCP through API Management
 
-This document explains how to deploy the [Azure MCP Server 2.0-beta](https://mcr.microsoft.com/product/azure-sdk/azure-mcp) as a remote MCP server accessible over HTTPS. This enables AI agents from [Microsoft Foundry](https://azure.microsoft.com/products/ai-foundry) and [Microsoft Copilot Studio](https://www.microsoft.com/microsoft-copilot/microsoft-copilot-studio) to securely invoke MCP tool calls that perform Azure operations on your behalf.
+This repository demonstrates an end-to-end Azure architecture in which an authenticated browser application calls a Microsoft Foundry agent through Azure API Management (APIM), and the agent calls Azure MCP Server through a second APIM gateway boundary.
 
-This reference Azure Developer CLI (azd) template shows how to host the server on Azure Container Apps with storage tools enabled, using managed identity authentication for secure access to Azure Storage.
+The solution uses Microsoft Entra ID, delegated authorization, application roles, and managed identities. No client secrets are required.
 
-> If you have feedback for this template, please open an issue in the [microsoft/mcp](https://github.com/microsoft/mcp) repo.
+## Attribution
+
+This project was originally based on
+[Azure-Samples/azmcp-foundry-aca-mi](https://github.com/Azure-Samples/azmcp-foundry-aca-mi)
+at commit [`e35a1c3`](https://github.com/Azure-Samples/azmcp-foundry-aca-mi/commit/e35a1c32ecc804ecc514244dd7cd4e013371cb30).
+
+This fork adds a browser SPA, APIM-mediated Foundry Responses API calls, a second
+APIM boundary for Azure MCP, additional read-only Azure MCP namespaces, and
+expanded identity, security, telemetry, and troubleshooting guidance.
+
+## Architecture
+
+```text
+Browser SPA
+  |  Entra delegated token
+  v
+Express web host
+  |  Entra delegated token + server-side APIM subscription key
+  v
+APIM: POST /responses
+  |  APIM managed-identity token for https://ai.azure.com
+  v
+Microsoft Foundry Responses API
+  |
+  v
+Foundry Agent
+  |  Foundry project managed-identity token for the MCP application
+  v
+APIM: Azure MCP endpoint
+  |  APIM managed-identity token for the MCP application
+  v
+Azure MCP Server on Azure Container Apps
+  |  Container App managed identity + Azure RBAC
+  v
+Azure Resource Manager, Resource Graph, and Storage
+```
+
+The editable architecture diagram is available at [foundry-apim-mcp-architecture.excalidraw](foundry-apim-mcp-architecture.excalidraw).
+
+### Identity and trust boundaries
+
+| Call | Caller identity | Authorization |
+|---|---|---|
+| Browser → Express | Signed-in user through the SPA registration | Delegated `access_as_user` scope validated by the web host |
+| Express → Agent APIM | Signed-in user token plus server-held APIM subscription key | APIM repeats JWT validation and applies product membership and quotas |
+| Agent APIM → Foundry | APIM system-managed identity | Foundry project role, such as **Foundry User** |
+| Foundry → MCP APIM | Foundry project managed identity | `Mcp.Tools.ReadWrite.All` application role exposed by the MCP Entra application |
+| MCP APIM → Container App | APIM system-managed identity | `Mcp.Tools.ReadWrite.All` application role |
+| Container App → Azure | Container App managed identity | Azure RBAC on the permitted resource scopes |
+
+APIM terminates and validates each inbound credential, obtains a new token for its own managed identity, and replaces the `Authorization` header. It does not pass through or re-sign the original token.
+
+## Repository components
+
+### Azure MCP infrastructure
+
+The Bicep deployment provisions:
+
+- Azure Container Apps environment and Container App
+- Azure MCP Server using Streamable HTTP
+- System-managed identity for the Container App
+- Entra application exposing `Mcp.Tools.ReadWrite.All`
+- Application-role assignment for the Foundry project managed identity
+- Azure RBAC assignments for the configured Storage account
+- Optional Application Insights telemetry
+
+Azure MCP Server runs with:
+
+- `--mode all`
+- `--read-only`
+- `storage`, `subscription`, `group`, and `arm` namespaces
+
+The `arm` namespace provides access to the hosted Azure Resource Manager MCP tools, including Azure Resource Graph queries.
+
+### Web application
+
+[`agent-web-app`](agent-web-app/) contains a production-style single-page application:
+
+- MSAL Browser authorization-code flow with PKCE
+- No browser or server-side client secret
+- Same-origin browser calls to an authenticated Express proxy
+- Server-side APIM subscription-key injection
+- Foundry Responses API multi-turn state using `previous_response_id`
+- Static Express host with `/api/config` and `/health`
+- Docker support for Azure Container Apps or App Service
+
+Express validates the delegated token before proxying the request. APIM repeats authorization at the gateway boundary and applies product policy.
 
 ## Prerequisites
 
-- Azure subscription with **Owner** or **User Access Administrator** permissions
-- [Azure Developer CLI (azd)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
-- The list of Azure MCP Server tool areas (namespaces) you wish to enable (see [azmcp-commands.md](https://github.com/microsoft/mcp/blob/main/servers/Azure.Mcp.Server/docs/azmcp-commands.md)). This reference template uses the `storage` namespace
+- Azure subscription with permissions to deploy resources and create role assignments
+- Microsoft Foundry project with a prompt agent
+- Existing Azure API Management instance with a system-managed identity
+- [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
+- Node.js 20 or later for the web application
+- Permission to create or configure Entra application registrations and application-role assignments
 
-## Quick Start
-
-This reference template deploys the Azure MCP Server with **read-only** Azure Storage tools enabled, accessible over HTTPS transport. For details on customizing server startup flags and configuration, see [Azure MCP Server documentation](https://github.com/microsoft/mcp/blob/main/servers/Azure.Mcp.Server/docs/azmcp-commands.md).
+## Deploy Azure MCP Server
 
 ```bash
 azd up
 ```
 
-You'll be prompted for:
-- **Storage Account Resource ID** - The Azure resource ID of the storage account the MCP server will access
-- **Microsoft Foundry Project Resource ID** - The Azure resource ID of the Microsoft Foundry project for agent integration
+The deployment requests:
 
-## What Gets Deployed
+- `STORAGE_RESOURCE_ID` — Storage account used for the template's scoped RBAC assignments
+- `FOUNDRY_PROJECT_RESOURCE_ID` — Foundry project whose managed identity receives the MCP application role
 
-- **Container App** - Runs Azure MCP Server with storage namespace
-- **Role Assignments** - Container App managed identity granted roles for outbound authentication to the storage account specified by the input storage resource ID:
-  - Reader (read-only access to storage account properties)
-  - Storage Blob Data Reader (read-only access to blob data)
-- **Entra App Registration** - For incoming OAuth 2.0 authentication from clients (e.g., agents) with `Mcp.Tools.ReadWrite.All` role. This role is assigned to the managed identity of the Microsoft Foundry project specified by the input Microsoft Foundry resource ID
-- **Application Insights** - Telemetry and monitoring
-
-### Deployment Outputs
-
-After deployment, retrieve `azd` outputs:
+Inspect the selected environment and deployment outputs:
 
 ```bash
 azd env get-values
 ```
 
-Among the output there are useful values for the subsequent steps. Here is an example of these values.
+Important outputs include:
 
+```text
+CONTAINER_APP_URL
+ENTRA_APP_CLIENT_ID
+ENTRA_APP_IDENTIFIER_URI
+ENTRA_APP_OBJECT_ID
+ENTRA_APP_ROLE_ID
+ENTRA_APP_SERVICE_PRINCIPAL_ID
 ```
-CONTAINER_APP_URL="https://azure-mcp-storage-server.wonderfulazmcp-a9561afd.eastus2.azurecontainerapps.io"
-ENTRA_APP_CLIENT_ID="c3248eaf-3bdd-4ca7-9483-4fcf213e4d4d"
-ENTRA_APP_IDENTIFIER_URI="api://c3248eaf-3bdd-4ca7-9483-4fcf213e4d4d"
-ENTRA_APP_OBJECT_ID="a89055df-ccfc-4aef-a7c6-9561bc4c5386"
-ENTRA_APP_ROLE_ID="3e60879b-a1bd-5faf-bb8c-cb55e3bfeeb8"
-ENTRA_APP_SERVICE_PRINCIPAL_ID="31b42369-583b-40b7-a535-ad343f75e463"
+
+`azd` selects or creates the resource group before deploying the resource-group-scoped Bicep templates. The templates do not create the resource group directly.
+
+## Configure the APIM agent gateway
+
+Expose a narrow `POST /responses` operation rather than an unrestricted Foundry proxy.
+
+The inbound policy should:
+
+1. Handle CORS for the web application's origins.
+2. Validate the delegated Entra token's tenant and API audience.
+3. Require `scp=access_as_user`.
+4. Require the SPA client ID in the `azp` claim.
+5. Inject a fixed `agent_reference` so the caller cannot select another agent.
+6. Authenticate to Foundry using APIM managed identity for `https://ai.azure.com`.
+7. Forward to:
+
+```text
+https://<foundry-resource>.services.ai.azure.com/api/projects/<project>/openai/v1/responses
 ```
 
-## Using Azure MCP Server from Microsoft Foundry Agent
+Grant the APIM managed identity the required role on the Foundry project.
 
-Once deployed, connect your Microsoft Foundry agent to the Azure MCP Server running on Azure Container Apps. The agent will authenticate using its managed identity and gain access to the configured Azure Storage tools.
+The Express proxy sends:
 
-1. Get your Container App URL from `azd` output: `CONTAINER_APP_URL`
-2. Get Entra App Client ID from `azd` output: `ENTRA_APP_CLIENT_ID`
-2. Navigate to your Foundry project: https://ai.azure.com/nextgen
-3. Go to **Build** → **Create agent**  
-4. Select the **+ Add** in the tools section
-5. Select the **Custom** tab 
-6. Choose **Model Context Protocol** as the tool and click **Create** ![Find MCP](images/azure__create-aif-agent-mcp-tool.png)
-7. Configure the MCP connection ![Create MCP Connection](images/azure__add_aif_mcp_connection.png)
-   - Enter the `CONTAINER_APP_URL` value as the Remote MCP Server endpoint. 
-   - Select **Microsoft Entra** → **Project Managed Identity**  as the authentication method
-   - Enter your `ENTRA_APP_CLIENT_ID` as the audience.
-   - Click **Connect** to associate this connection to the agent
+```http
+Authorization: Bearer <delegated-user-token>
+Ocp-Apim-Subscription-Key: <subscription-key>
+Content-Type: application/json
+```
 
-Your agent is now ready to assist you! It can answer your questions and leverage tools from the Azure MCP Server to perform Azure operations on your behalf.
+The subscription key remains server-side and is never returned by `/api/config`. Keep Entra JWT validation enabled in both the web host and APIM.
 
-## Clean Up
+## Configure the APIM MCP gateway
+
+Create an APIM passthrough MCP API whose backend is `CONTAINER_APP_URL`.
+
+The policy should:
+
+1. Validate the Foundry project managed-identity token.
+2. Require the MCP application audience.
+3. Require the expected Foundry project `oid`.
+4. Require `roles=Mcp.Tools.ReadWrite.All`.
+5. Obtain an APIM managed-identity token for the MCP application.
+6. Replace the backend `Authorization` header.
+7. Preserve Streamable HTTP POST, GET/SSE, session, and protocol headers.
+
+Assign `Mcp.Tools.ReadWrite.All` to the APIM managed identity on the MCP service principal. Managed-identity tokens are cached; a newly assigned application role might not appear until the cached token expires.
+
+### Connect the Foundry agent to APIM MCP
+
+Configure the agent's MCP tool to call APIM rather than the Container App directly:
+
+1. Open the Foundry project and select the agent.
+2. Select **Add tool** → **Custom** → **Model Context Protocol**.
+3. Set the remote MCP endpoint to the APIM MCP URL:
+
+   ```text
+   https://<apim-name>.azure-api.net/azuremcpserver
+   ```
+
+4. Select **Microsoft Entra** and **Project Managed Identity**.
+5. Set the audience to `ENTRA_APP_CLIENT_ID`, the application ID exposed by the MCP Entra registration.
+6. Save the connection and associate it with the agent.
+
+The Foundry project identity calls APIM. It should not use `CONTAINER_APP_URL` as the agent connection endpoint in this architecture.
+
+### MCP body inspection and schema compatibility
+
+MCP client messages are individual JSON-RPC POST bodies, while GET requests can establish long-lived SSE streams. Any policy that reads a request body must guard against GET requests and preserve the content:
+
+```csharp
+if (context.Request.Method != "POST" || context.Request.Body == null)
+{
+    return false;
+}
+
+var body = context.Request.Body.As<string>(preserveContent: true);
+```
+
+Foundry can reject ARM MCP `tools/list` schemas containing:
+
+```json
+"properties": { "result": true }
+```
+
+The current APIM compatibility workaround applies only to a successful JSON `tools/list` response and rewrites that property to:
+
+```json
+"properties": { "result": {} }
+```
+
+Do not apply `set-body` to `text/event-stream` responses.
+
+### Tool-call telemetry
+
+APIM can inspect JSON-RPC POST requests and trace `params.name` when `method` is `tools/call`. Log only the tool name and a correlation ID. Do not log:
+
+- `Authorization` headers
+- Access tokens
+- APIM subscription keys
+- Complete tool arguments or request bodies
+
+## Run the web application
+
+```bash
+cd agent-web-app
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Open <http://localhost:3000>. See the [web application README](agent-web-app/README.md) for Entra registration and deployment details.
+
+## Validation
+
+Validate the web application:
+
+```bash
+cd agent-web-app
+npm run check
+docker build .
+```
+
+Inspect Container App logs:
+
+```bash
+az containerapp logs show \
+  --name azure-mcp-storage-server \
+  --resource-group <resource-group> \
+  --follow
+```
+
+APIM Application Insights telemetry should show both:
+
+- `POST /azuremcpserver` for JSON-RPC messages
+- `GET /azuremcpserver` when the MCP client opens an SSE stream
+
+## Common errors
+
+### `Object reference not set to an instance of an object`
+
+An APIM policy attempted to read `context.Request.Body` on the MCP GET/SSE request. Check the method and ensure the body is non-null before parsing it.
+
+### `The 'agent' property is deprecated`
+
+Use `agent_reference` in the Foundry Responses API payload. This architecture injects it in APIM.
+
+### Unexpected `iss` claim
+
+Set the protected API registration manifest to issue v2 tokens:
+
+```json
+"requestedAccessTokenVersion": 2
+```
+
+APIM should validate the tenant-specific v2 issuer and the configured API audience.
+
+### APIM returns `401` with `AzureApiManagementKey`
+
+The API or product requires a subscription key. Attach a valid subscription and send its key in `Ocp-Apim-Subscription-Key`.
+
+### MCP backend token has no `roles` claim
+
+Assign `Mcp.Tools.ReadWrite.All` to the calling managed identity on the MCP enterprise application. If the assignment was just created, wait for the previously cached managed-identity token to expire.
+
+### `ServiceManagementReference field is required`
+
+Set `SERVICE_MANAGEMENT_REFERENCE` in the selected `azd` environment, then rerun `azd up`:
+
+```bash
+azd env set SERVICE_MANAGEMENT_REFERENCE <your-service-tree-guid>
+```
+
+## Clean up
 
 ```bash
 azd down
 ```
 
-## Template Structure
+This removes resources managed by the selected `azd` environment. Separately configured APIM APIs, policies, products, subscriptions, Entra registrations, and manually created role assignments must be removed separately if they are no longer needed.
 
-The `azd` template consists of the following Bicep modules:
+## Infrastructure modules
 
-- **`main.bicep`** - Orchestrates the deployment of all resources
-- **`aca-infrastructure.bicep`** - Deploys Container App hosting the Azure MCP Server
-- **`aca-role-assignment-resource-storage.bicep`** - Assigns Azure storage RBAC roles to the Container App managed identity on the storage account specified by the input storage resource ID
-- **`entra-app.bicep`** - Creates Entra App registration with custom app role for OAuth 2.0 authentication
-- **`foundry-role-assignment-entraapp.bicep`** - Assigns Entra App role to the managed identity of the Microsoft Foundry project specified by the input Microsoft Foundry resource ID for the Azure MCP Server access
-- **`application-insights.bicep`** - Deploys Application Insights for telemetry and monitoring (conditional deployment)
-
-## Common Errors
-
-### ServiceManagementReference field is required
-
-```json
-{ 
-  "error": { 
-    "code":"BadRequest",
-    "target":"/resources/entraApp",
-    "message":"ServiceManagementReference field is required for ..."
-  }
-}
-```
-
-This occurs when deploying (`azd up`) an Entra app registration without a `serviceManagementReference`. The Microsoft Graph API requires this field if your organization requires a Service Tree ID that the app should be attributed to.
-
-**Fix:** Pass the GUID via the `serviceManagementReference` parameter. Add it to [infra/main.parameters.json](infra/main.parameters.json):
-
-```json
-{
-  "parameters": {
-    "serviceManagementReference": {
-      "value": "<your-guid>"
-    }
-  }
-}
-```
-
-Then re-run `azd up`.
-
+- [`infra/main.bicep`](infra/main.bicep) — deployment orchestration and namespace allowlist
+- [`infra/modules/aca-infrastructure.bicep`](infra/modules/aca-infrastructure.bicep) — Container App and Azure MCP startup arguments
+- [`infra/modules/aca-role-assignment-resource-storage.bicep`](infra/modules/aca-role-assignment-resource-storage.bicep) — scoped Storage RBAC
+- [`infra/modules/entra-app.bicep`](infra/modules/entra-app.bicep) — MCP Entra application and application role
+- [`infra/modules/foundry-role-assignment-entraapp.bicep`](infra/modules/foundry-role-assignment-entraapp.bicep) — Foundry project application-role assignment
+- [`infra/modules/application-insights.bicep`](infra/modules/application-insights.bicep) — optional telemetry

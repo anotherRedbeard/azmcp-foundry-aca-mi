@@ -37,6 +37,6 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = if (sh
 // 1. If created  -> return the new connection string
 // 2. If disabled -> return empty string
 // 3. Otherwise   -> return provided (input) connection string
-output connectionString string = shouldCreate 
-  ? (applicationInsights.?properties.ConnectionString ?? '') 
+output connectionString string = shouldCreate
+  ? (applicationInsights.?properties.ConnectionString ?? '')
   : (isDisabled ? '' : appInsightsConnectionString)

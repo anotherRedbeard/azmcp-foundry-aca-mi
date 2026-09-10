@@ -12,7 +12,7 @@
   Service Principal
      This is the actual "identity" that represents the Entra App within the Azure
      tenant. This is what you'll assign Azure permissions to, not the app registration itself.
-  
+
   The Entra App registration defines what the app could do, while the Service Principal
   defines what it can actually do in your specific environment.
 */
@@ -42,7 +42,7 @@ var entraAppScopeDescription = 'Delegated permission for Azure MCP tool calls'
 var vsCodeClientAppId = 'aebc6443-996d-45c2-90f0-388ff96faa56'
 
 resource entraApp 'Microsoft.Graph/applications@v1.0' = {
-  uniqueName: entraAppUniqueName 
+  uniqueName: entraAppUniqueName
   displayName: entraAppDisplayName
   serviceManagementReference: !empty(serviceManagementReference) ? serviceManagementReference : null
   appRoles: [
