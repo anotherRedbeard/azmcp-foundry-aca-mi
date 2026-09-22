@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "entraAppDisplayName": {
+      "value": "Azure MCP Managed Identity API"
+    },
+    "acaName": {
+      "value": "azure-mcp-storage-server-mi"
+    },
+    "foundryProjectName": {
+      "value": "managed-identity"
+    },
+    "apimPublisherName": {
+      "value": "${APIM_PUBLISHER_NAME}"
+    },
+    "apimPublisherEmail": {
+      "value": "${APIM_PUBLISHER_EMAIL}"
+    },
+    "spaClientId": {
+      "value": "${SPA_CLIENT_ID}"
+    },
+    "responsesApiClientId": {
+      "value": "${RESPONSES_API_CLIENT_ID}"
+    },
+    "allowedWebOrigins": {
+      "value": [
+        "${WEB_APP_ORIGIN}"
+      ]
+    },
+    "gpt5DeploymentName": {
+      "value": "gpt-5"
+    },
+    "gpt5ModelName": {
+      "value": "gpt-5"
+    },
+    "gpt5ModelVersion": {
+      "value": "2025-08-07"
+    },
+    "gpt5SkuName": {
+      "value": "GlobalStandard"
+    },
+    "gpt5Capacity": {
+      "value": 200
+    },
+    "gpt5MiniDeploymentName": {
+      "value": "gpt-5-mini"
+    },
+    "gpt5MiniModelName": {
+      "value": "gpt-5-mini"
+    },
+    "gpt5MiniModelVersion": {
+      "value": "2025-08-07"
+    },
+    "gpt5MiniSkuName": {
+      "value": "GlobalStandard"
+    },
+    "gpt5MiniCapacity": {
+      "value": 200
+    }
+  }
+}

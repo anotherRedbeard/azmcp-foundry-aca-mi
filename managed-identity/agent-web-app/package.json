@@ -1,0 +1,25 @@
+{
+  "name": "foundry-agent-web-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:client": "esbuild client/app.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/app.js",
+    "build": "npm run build:client",
+    "dev": "npm run build:client && node --watch src/server.js",
+    "start": "node src/server.js",
+    "check": "npm run build:client && node --check src/server.js && node --check public/app.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@azure/msal-browser": "^4.0.0",
+    "dotenv": "^17.0.0",
+    "esbuild": "^0.25.0",
+    "express": "^5.0.0",
+    "helmet": "^8.0.0",
+    "jose": "^6.2.10"
+  }
+}

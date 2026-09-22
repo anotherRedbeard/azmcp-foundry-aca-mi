@@ -1,0 +1,156 @@
+<policies>
+  <inbound>
+    <base />
+    <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Invalid delegated MCP token" require-expiration-time="true" require-scheme="Bearer">
+      <openid-config url="https://login.microsoftonline.com/__TENANT_ID__/v2.0/.well-known/openid-configuration" />
+      <audiences>
+        <audience>api://__MCP_CLIENT_ID__</audience>
+        <audience>__MCP_CLIENT_ID__</audience>
+      </audiences>
+      <required-claims>
+        <claim name="scp" match="any" separator=" ">
+          <value>Mcp.Tools.ReadWrite</value>
+        </claim>
+        <claim name="azp" match="any">
+          <value>__API_CLIENT_ID__</value>
+        </claim>
+      </required-claims>
+    </validate-jwt>
+    <set-variable name="isToolsList" value="@{
+      if (!string.Equals(context.Request.Method, &quot;POST&quot;, StringComparison.OrdinalIgnoreCase) || context.Request.Body == null)
+      {
+        return false;
+      }
+      try
+      {
+        var body = context.Request.Body.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true);
+        return string.Equals((string)body[&quot;method&quot;], &quot;tools/list&quot;, StringComparison.Ordinal);
+      }
+      catch
+      {
+        return false;
+      }
+    }" />
+    <set-header name="Accept" exists-action="override">
+      <value>application/json, text/event-stream</value>
+    </set-header>
+    <set-backend-service backend-id="azure-mcp" />
+    <rewrite-uri template="/" copy-unmatched-params="true" />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+    <choose>
+      <when condition="@(
+        context.Response.StatusCode &gt;= 200 &amp;&amp;
+        context.Response.StatusCode &lt; 300 &amp;&amp;
+        context.Response.Body != null &amp;&amp;
+        context.Variables.GetValueOrDefault&lt;bool&gt;(&quot;isToolsList&quot;, false) &amp;&amp;
+        (context.Response.Headers.GetValueOrDefault(&quot;Content-Type&quot;, &quot;&quot;).IndexOf(&quot;application/json&quot;, StringComparison.OrdinalIgnoreCase) &gt;= 0 ||
+         context.Response.Headers.GetValueOrDefault(&quot;Content-Type&quot;, &quot;&quot;).IndexOf(&quot;text/event-stream&quot;, StringComparison.OrdinalIgnoreCase) &gt;= 0)
+      )">
+        <set-variable name="originalToolsListBody" value="@(context.Response.Body.As&lt;string&gt;(preserveContent: true))" />
+        <set-variable name="transformedToolsListBody" value="@{
+          var original = context.Variables.GetValueOrDefault&lt;string&gt;(&quot;originalToolsListBody&quot;, &quot;&quot;);
+          var contentType = context.Response.Headers.GetValueOrDefault(&quot;Content-Type&quot;, &quot;&quot;);
+          var payload = original;
+
+          if (contentType.IndexOf(&quot;text/event-stream&quot;, StringComparison.OrdinalIgnoreCase) &gt;= 0)
+          {
+            var normalized = original.Replace(&quot;\r\n&quot;, &quot;\n&quot;).Trim();
+            var eventEnd = normalized.IndexOf(&quot;\n\n&quot;, StringComparison.Ordinal);
+            var eventText = eventEnd &gt;= 0 ? normalized.Substring(0, eventEnd) : normalized;
+            var remainder = eventEnd &gt;= 0 ? normalized.Substring(eventEnd + 2).Trim() : &quot;&quot;;
+            if (!string.IsNullOrEmpty(remainder))
+            {
+              return original;
+            }
+
+            var data = &quot;&quot;;
+            var offset = 0;
+            while (offset &lt;= eventText.Length)
+            {
+              var lineEnd = eventText.IndexOf('\n', offset);
+              var line = lineEnd &gt;= 0 ? eventText.Substring(offset, lineEnd - offset) : eventText.Substring(offset);
+              if (line.StartsWith(&quot;data:&quot;, StringComparison.Ordinal))
+              {
+                if (data.Length &gt; 0)
+                {
+                  data += &quot;\n&quot;;
+                }
+                data += line.Substring(5).TrimStart();
+              }
+              if (lineEnd &lt; 0)
+              {
+                break;
+              }
+              offset = lineEnd + 1;
+            }
+
+            if (string.IsNullOrWhiteSpace(data))
+            {
+              return original;
+            }
+            payload = data;
+          }
+
+          try
+          {
+            var document = Newtonsoft.Json.Linq.JObject.Parse(payload);
+            var tools = document[&quot;result&quot;]?[&quot;tools&quot;] as Newtonsoft.Json.Linq.JArray;
+            if (tools == null)
+            {
+              return original;
+            }
+
+            foreach (var token in tools)
+            {
+              var tool = token as Newtonsoft.Json.Linq.JObject;
+              if (tool == null)
+              {
+                continue;
+              }
+
+              var outputSchema = tool[&quot;outputSchema&quot;];
+              if (outputSchema != null &amp;&amp; outputSchema.Type == Newtonsoft.Json.Linq.JTokenType.Boolean)
+              {
+                tool.Remove(&quot;outputSchema&quot;);
+                continue;
+              }
+
+              var outputObject = outputSchema as Newtonsoft.Json.Linq.JObject;
+              var properties = outputObject?[&quot;properties&quot;] as Newtonsoft.Json.Linq.JObject;
+              var result = properties?[&quot;result&quot;];
+              if (result != null &amp;&amp; result.Type == Newtonsoft.Json.Linq.JTokenType.Boolean &amp;&amp; (bool)result)
+              {
+                properties[&quot;result&quot;] = new Newtonsoft.Json.Linq.JObject();
+              }
+            }
+            return document.ToString(Newtonsoft.Json.Formatting.None);
+          }
+          catch
+          {
+            return original;
+          }
+        }" />
+        <choose>
+          <when condition="@(!string.Equals(
+            context.Variables.GetValueOrDefault&lt;string&gt;(&quot;originalToolsListBody&quot;, &quot;&quot;),
+            context.Variables.GetValueOrDefault&lt;string&gt;(&quot;transformedToolsListBody&quot;, &quot;&quot;),
+            StringComparison.Ordinal
+          ))">
+            <set-header name="Content-Type" exists-action="override">
+              <value>application/json</value>
+            </set-header>
+            <set-body>@(context.Variables.GetValueOrDefault&lt;string&gt;(&quot;transformedToolsListBody&quot;, &quot;&quot;))</set-body>
+          </when>
+        </choose>
+      </when>
+    </choose>
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>

@@ -417,3 +417,9 @@ FodyWeavers.xsd
 *.msm
 *.msp
 .azure
+
+# Local Python environments
+.venv/
+
+# Compiled Bicep output
+**/infra/main.json

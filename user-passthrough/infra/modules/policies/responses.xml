@@ -1,0 +1,54 @@
+<policies>
+  <inbound>
+    <base />
+    <cors allow-credentials="false">
+      <allowed-origins>__ALLOWED_ORIGINS__</allowed-origins>
+      <allowed-methods>
+        <method>POST</method>
+        <method>OPTIONS</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>authorization</header>
+        <header>content-type</header>
+        <header>ocp-apim-subscription-key</header>
+      </allowed-headers>
+    </cors>
+    <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Invalid Foundry delegated token" require-expiration-time="true" require-scheme="Bearer">
+      <openid-config url="https://login.microsoftonline.com/__TENANT_ID__/.well-known/openid-configuration" />
+      <audiences>
+        <audience>https://ai.azure.com</audience>
+      </audiences>
+      <required-claims>
+        <claim name="scp" match="any" separator=" ">
+          <value>user_impersonation</value>
+        </claim>
+        <claim name="appid" match="any">
+          <value>__SPA_CLIENT_ID__</value>
+        </claim>
+      </required-claims>
+    </validate-jwt>
+    <set-body>@{
+      var body = context.Request.Body.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true);
+      body[&quot;agent_reference&quot;] = new Newtonsoft.Json.Linq.JObject
+      {
+        [&quot;type&quot;] = &quot;agent_reference&quot;,
+        [&quot;name&quot;] = &quot;MyMcpPassthroughAgent&quot;
+      };
+      body.Remove(&quot;agent&quot;);
+      return body.ToString(Newtonsoft.Json.Formatting.None);
+    }</set-body>
+    <set-header name="Accept" exists-action="override">
+      <value>application/json, text/event-stream</value>
+    </set-header>
+    <set-backend-service backend-id="foundry-responses" />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
