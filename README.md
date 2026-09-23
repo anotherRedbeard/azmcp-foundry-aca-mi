@@ -21,6 +21,7 @@ Quick links:
 
 - [Deploy the managed-identity variant](managed-identity/README.md)
 - [Deploy the user-passthrough/OBO variant](user-passthrough/README.md)
+- [Deploy both web applications with GitHub Actions](web-host/README.md)
 - [Configure MCP Inspector through managed-identity APIM](managed-identity/README.md#9-use-mcp-inspector-through-apim)
 
 ## Keep the variants isolated
@@ -38,6 +39,10 @@ Do not combine or share the variants':
 - Foundry projects, agents, or MCP connections
 - `azd` environments or deployment outputs
 - Web application configuration
+
+The optional [dual web-host deployment](web-host/README.md) places only the two
+web front ends in one shared Container Apps environment. Their APIM, Foundry,
+MCP runtime, Entra configuration, and application settings remain separate.
 
 Pointing one variant at the other variant's MCP endpoint creates a hybrid identity flow and invalidates the authorization model.
 
@@ -71,6 +76,13 @@ user-passthrough/
   infra/
   agent-web-app/
   foundry-apim-mcp-user-passthrough.excalidraw
+
+web-host/
+  README.md
+  infra/
+
+.github/workflows/
+  deploy-web-apps.yml
 ```
 
 Deployment and testing commands belong only in the corresponding variant README. Web-host implementation details belong in that variant's `agent-web-app/README.md`.

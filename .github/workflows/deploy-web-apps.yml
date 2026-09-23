@@ -1,0 +1,193 @@
+name: Deploy dual web apps
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-webapps-dev
+  cancel-in-progress: false
+
+env:
+  AZURE_LOCATION: eastus2
+  NAMING_PREFIX: azmcp-webapps-dev
+  MANAGED_APP_NAME: ca-azmcp-managed-identity
+  PASSTHROUGH_APP_NAME: ca-azmcp-user-passthrough
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    environment: azure-webapps-dev
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Register required resource providers
+        shell: bash
+        run: |
+          set -euo pipefail
+          for namespace in \
+            Microsoft.App \
+            Microsoft.ContainerRegistry \
+            Microsoft.ManagedIdentity \
+            Microsoft.OperationalInsights; do
+            az provider register --namespace "$namespace" --wait
+          done
+
+      - name: Validate and deploy shared foundation
+        id: foundation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          az deployment sub validate \
+            --name "web-host-foundation-validation" \
+            --location "$AZURE_LOCATION" \
+            --template-file web-host/infra/foundation.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              namingPrefix="$NAMING_PREFIX" \
+            --only-show-errors \
+            --output none
+
+          outputs="$(az deployment sub create \
+            --name "web-host-foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --location "$AZURE_LOCATION" \
+            --template-file web-host/infra/foundation.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              namingPrefix="$NAMING_PREFIX" \
+            --only-show-errors \
+            --query properties.outputs \
+            --output json)"
+
+          echo "resource_group=$(jq -r '.resourceGroupName.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "environment_name=$(jq -r '.environmentName.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "registry_name=$(jq -r '.registryName.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "registry_login_server=$(jq -r '.registryLoginServer.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "pull_identity_name=$(jq -r '.pullIdentityName.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+
+      - name: Build managed-identity image in ACR
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr build \
+            --registry "${{ steps.foundation.outputs.registry_name }}" \
+            --image "managed-identity:${GITHUB_SHA}" \
+            --file managed-identity/agent-web-app/Dockerfile \
+            managed-identity/agent-web-app \
+            --only-show-errors
+
+      - name: Build user-passthrough image in ACR
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr build \
+            --registry "${{ steps.foundation.outputs.registry_name }}" \
+            --image "user-passthrough:${GITHUB_SHA}" \
+            --file user-passthrough/agent-web-app/Dockerfile \
+            user-passthrough/agent-web-app \
+            --only-show-errors
+
+      - name: Validate and deploy Container Apps
+        id: apps
+        shell: bash
+        env:
+          MANAGED_APIM_SUBSCRIPTION_KEY: ${{ secrets.MANAGED_APIM_SUBSCRIPTION_KEY }}
+          PASSTHROUGH_APIM_SUBSCRIPTION_KEY: ${{ secrets.PASSTHROUGH_APIM_SUBSCRIPTION_KEY }}
+        run: |
+          set -euo pipefail
+
+          managed_image="${{ steps.foundation.outputs.registry_login_server }}/managed-identity:${GITHUB_SHA}"
+          passthrough_image="${{ steps.foundation.outputs.registry_login_server }}/user-passthrough:${GITHUB_SHA}"
+
+          common_parameters=(
+            environmentName="${{ steps.foundation.outputs.environment_name }}"
+            registryName="${{ steps.foundation.outputs.registry_name }}"
+            pullIdentityName="${{ steps.foundation.outputs.pull_identity_name }}"
+            managedAppName="$MANAGED_APP_NAME"
+            passthroughAppName="$PASSTHROUGH_APP_NAME"
+            managedImage="$managed_image"
+            passthroughImage="$passthrough_image"
+            entraTenantId="${{ vars.AZURE_TENANT_ID }}"
+            managedSpaClientId="${{ vars.MANAGED_ENTRA_SPA_CLIENT_ID }}"
+            managedApiScope="${{ vars.MANAGED_ENTRA_API_SCOPE }}"
+            managedApimResponsesUrl="${{ vars.MANAGED_APIM_RESPONSES_URL }}"
+            managedApimSubscriptionKey="$MANAGED_APIM_SUBSCRIPTION_KEY"
+            passthroughSpaClientId="${{ vars.PASSTHROUGH_ENTRA_SPA_CLIENT_ID }}"
+            passthroughFoundryApiScope="${{ vars.PASSTHROUGH_FOUNDRY_API_SCOPE }}"
+            passthroughApimResponsesUrl="${{ vars.PASSTHROUGH_APIM_RESPONSES_URL }}"
+            passthroughApimSubscriptionKey="$PASSTHROUGH_APIM_SUBSCRIPTION_KEY"
+          )
+
+          az deployment group validate \
+            --name "web-host-apps-validation" \
+            --resource-group "${{ steps.foundation.outputs.resource_group }}" \
+            --template-file web-host/infra/apps.bicep \
+            --parameters "${common_parameters[@]}" \
+            --only-show-errors \
+            --output none
+
+          outputs="$(az deployment group create \
+            --name "web-host-apps-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --resource-group "${{ steps.foundation.outputs.resource_group }}" \
+            --template-file web-host/infra/apps.bicep \
+            --parameters "${common_parameters[@]}" \
+            --only-show-errors \
+            --query properties.outputs \
+            --output json)"
+
+          echo "managed_url=$(jq -r '.managedAppUrl.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "passthrough_url=$(jq -r '.passthroughAppUrl.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify application health
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          check_health() {
+            local name="$1"
+            local url="$2"
+
+            for attempt in {1..20}; do
+              if curl --fail --silent --show-error --max-time 15 "$url/health" >/dev/null; then
+                echo "$name is healthy at $url"
+                return 0
+              fi
+
+              echo "Waiting for $name to become healthy (attempt $attempt of 20)..."
+              sleep 15
+            done
+
+            echo "::error::$name did not become healthy at $url"
+            return 1
+          }
+
+          check_health "Managed identity web app" "${{ steps.apps.outputs.managed_url }}"
+          check_health "User passthrough web app" "${{ steps.apps.outputs.passthrough_url }}"
+
+      - name: Publish deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## Azure web applications"
+            echo
+            echo "| Application | URL |"
+            echo "| --- | --- |"
+            echo "| Managed identity | ${{ steps.apps.outputs.managed_url }} |"
+            echo "| User passthrough | ${{ steps.apps.outputs.passthrough_url }} |"
+            echo
+            echo "Add each URL as a redirect URI on its matching SPA application registration."
+          } >> "$GITHUB_STEP_SUMMARY"
