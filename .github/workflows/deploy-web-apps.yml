@@ -2,26 +2,52 @@ name: Deploy dual web apps
 
 on:
   workflow_dispatch:
+    inputs:
+      github_environment:
+        description: GitHub Environment containing the Azure variables and secrets
+        required: true
+        default: azure-webapps-dev
+        type: string
+      azure_location:
+        description: Azure region for the shared web-host resources
+        required: true
+        default: eastus2
+        type: string
+      naming_prefix:
+        description: Prefix used for the resource group and shared resources
+        required: true
+        default: azmcp-webapps-dev
+        type: string
+      managed_app_name:
+        description: Container App name for the managed-identity web app
+        required: true
+        default: ca-azmcp-managed-identity
+        type: string
+      passthrough_app_name:
+        description: Container App name for the user-passthrough web app
+        required: true
+        default: ca-azmcp-user-passthrough
+        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: azure-webapps-dev
+  group: web-host-${{ inputs.github_environment }}
   cancel-in-progress: false
 
 env:
-  AZURE_LOCATION: eastus2
-  NAMING_PREFIX: azmcp-webapps-dev
-  MANAGED_APP_NAME: ca-azmcp-managed-identity
-  PASSTHROUGH_APP_NAME: ca-azmcp-user-passthrough
+  AZURE_LOCATION: ${{ inputs.azure_location }}
+  NAMING_PREFIX: ${{ inputs.naming_prefix }}
+  MANAGED_APP_NAME: ${{ inputs.managed_app_name }}
+  PASSTHROUGH_APP_NAME: ${{ inputs.passthrough_app_name }}
 
 jobs:
   deploy:
     name: Build and deploy
     runs-on: ubuntu-latest
-    environment: azure-webapps-dev
+    environment: ${{ inputs.github_environment }}
 
     steps:
       - name: Check out repository

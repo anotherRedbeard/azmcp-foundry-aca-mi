@@ -57,9 +57,9 @@ The Foundry custom OAuth connection must include `offline_access` and use the te
 5. Grant consent if tenant policy requires it.
 6. Do not create a client secret.
 
-The Azure Machine Learning Services resource application ID is
-`18a66f5f-dbdf-4c17-9dd7-1634712a9cbe`; its `user_impersonation` scope ID is
-`1a7925b5-f871-417a-9b8b-303f9f29fa10`.
+Select **Azure Machine Learning Services** by name and add its delegated
+`user_impersonation` permission. No application or permission ID needs to be
+copied into this repository.
 
 For Azure deployment, add the deployed HTTPS origin as another SPA redirect URI.
 

@@ -88,8 +88,8 @@ Replace every placeholder in `azd.env`:
 AZURE_LOCATION="eastus2"
 APIM_PUBLISHER_NAME="Contoso Publisher"
 APIM_PUBLISHER_EMAIL="admin@example.com"
-SPA_CLIENT_ID="00000000-0000-0000-0000-000000000000"
-RESPONSES_API_CLIENT_ID="00000000-0000-0000-0000-000000000000"
+SPA_CLIENT_ID="<spa-client-id>"
+RESPONSES_API_CLIENT_ID="<responses-api-client-id>"
 WEB_APP_ORIGIN="http://localhost:3000"
 ```
 

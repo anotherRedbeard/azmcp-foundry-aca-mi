@@ -1,184 +1,145 @@
 # Deploy Both Web Applications
 
-This deployment creates one resource group, Azure Container Registry, Log
-Analytics workspace, and Azure Container Apps environment. It then builds and
-deploys the two existing web applications as separate public Container Apps.
+This manual GitHub Actions workflow creates a shared Azure Container Apps
+environment and deploys both web front ends. It reuses your existing APIM,
+Foundry, MCP, and Entra resources. It does not use `azd`.
 
-It reuses the existing APIM, Microsoft Foundry, and Entra resources. It does not
-deploy either complete identity stack and does not use `azd`.
+## Prerequisites
 
-## 1. Create the GitHub OIDC credential
+- Azure CLI and GitHub CLI
+- An Entra application for GitHub Actions
+- `Contributor` and `User Access Administrator` on the target subscription
+- Existing managed-identity and user-passthrough deployments
 
-The deployment application is:
-
-```text
-spGithubActionsDemo
-a448f016-1354-4b2c-b050-c6aa6d63d1ea
-```
-
-Create a federated credential for the GitHub Environment:
+Set these values:
 
 ```bash
-cat > federated-credential.json <<'JSON'
-{
-  "name": "github-azure-webapps-dev",
-  "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:anotherRedbeard/azmcp-foundry-aca-mi:environment:azure-webapps-dev",
-  "description": "Deploy the dual web-host Container Apps environment",
-  "audiences": [
-    "api://AzureADTokenExchange"
-  ]
-}
-JSON
+GITHUB_REPOSITORY="<owner>/<repository>"
+GITHUB_ENVIRONMENT="azure-webapps-dev"
+DEPLOYMENT_CLIENT_ID="<github-deployment-client-id>"
+AZURE_TENANT_ID="<azure-tenant-id>"
+AZURE_SUBSCRIPTION_ID="<azure-subscription-id>"
+```
+
+Find the current tenant and subscription:
+
+```bash
+az account show --query "{tenantId:tenantId, subscriptionId:id}" --output table
+```
+
+## 1. Configure GitHub OIDC
+
+Create a federated credential on the deployment application:
+
+```bash
+jq -n \
+  --arg name "github-${GITHUB_ENVIRONMENT}" \
+  --arg subject "repo:${GITHUB_REPOSITORY}:environment:${GITHUB_ENVIRONMENT}" \
+  '{
+    name: $name,
+    issuer: "https://token.actions.githubusercontent.com",
+    subject: $subject,
+    audiences: ["api://AzureADTokenExchange"]
+  }' > federated-credential.json
 
 az ad app federated-credential create \
-  --id a448f016-1354-4b2c-b050-c6aa6d63d1ea \
+  --id "$DEPLOYMENT_CLIENT_ID" \
   --parameters @federated-credential.json
 
 rm federated-credential.json
 ```
 
-The service principal already requires these roles at subscription scope:
-
-```text
-Contributor
-User Access Administrator
-```
-
-`User Access Administrator` is required because Bicep grants the Container Apps
-pull identity `AcrPull` on the new registry.
-
-## 2. Create the GitHub Environment
-
-Create the environment:
+## 2. Configure the GitHub Environment
 
 ```bash
-gh api \
-  --method PUT \
-  repos/anotherRedbeard/azmcp-foundry-aca-mi/environments/azure-webapps-dev
-```
+gh api --method PUT \
+  "repos/${GITHUB_REPOSITORY}/environments/${GITHUB_ENVIRONMENT}"
 
-Add deployment identity variables:
-
-```bash
 gh variable set AZURE_CLIENT_ID \
-  --env azure-webapps-dev \
-  --body a448f016-1354-4b2c-b050-c6aa6d63d1ea
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
+  --body "$DEPLOYMENT_CLIENT_ID"
 
 gh variable set AZURE_TENANT_ID \
-  --env azure-webapps-dev \
-  --body 7f2ca508-a0fb-428b-b25e-cdfc4f5dc55b
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
+  --body "$AZURE_TENANT_ID"
 
 gh variable set AZURE_SUBSCRIPTION_ID \
-  --env azure-webapps-dev \
-  --body 0272c02b-5a38-4b6b-86e6-dcc4ff2ff0e8
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
+  --body "$AZURE_SUBSCRIPTION_ID"
 ```
 
-Add the managed-identity application variables:
+Add the managed-identity settings:
 
 ```bash
 gh variable set MANAGED_ENTRA_SPA_CLIENT_ID \
-  --env azure-webapps-dev \
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
   --body "<managed-spa-client-id>"
 
 gh variable set MANAGED_ENTRA_API_SCOPE \
-  --env azure-webapps-dev \
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
   --body "api://<managed-responses-api-client-id>/access_as_user"
 
 gh variable set MANAGED_APIM_RESPONSES_URL \
-  --env azure-webapps-dev \
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
   --body "https://<managed-apim-name>.azure-api.net/agent/responses"
 ```
 
-Add the user-passthrough application variables:
+Add the user-passthrough settings:
 
 ```bash
 gh variable set PASSTHROUGH_ENTRA_SPA_CLIENT_ID \
-  --env azure-webapps-dev \
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
   --body "<passthrough-spa-client-id>"
 
 gh variable set PASSTHROUGH_FOUNDRY_API_SCOPE \
-  --env azure-webapps-dev \
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
   --body "https://ai.azure.com/user_impersonation"
 
 gh variable set PASSTHROUGH_APIM_RESPONSES_URL \
-  --env azure-webapps-dev \
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
   --body "https://<passthrough-apim-name>.azure-api.net/agent/responses"
 ```
 
-Add both APIM keys as environment secrets. Each command prompts for the value:
+Add both APIM subscription keys when prompted:
 
 ```bash
-gh secret set MANAGED_APIM_SUBSCRIPTION_KEY --env azure-webapps-dev
-gh secret set PASSTHROUGH_APIM_SUBSCRIPTION_KEY --env azure-webapps-dev
+gh secret set MANAGED_APIM_SUBSCRIPTION_KEY \
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT"
+
+gh secret set PASSTHROUGH_APIM_SUBSCRIPTION_KEY \
+  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT"
 ```
 
-## 3. Run the workflow
+## 3. Deploy
 
-Run it manually:
+Run the manual workflow:
 
 ```bash
-gh workflow run deploy-web-apps.yml --ref main
+gh workflow run deploy-web-apps.yml \
+  --repo "$GITHUB_REPOSITORY" \
+  --ref main \
+  --field github_environment="$GITHUB_ENVIRONMENT"
+
+gh run watch --repo "$GITHUB_REPOSITORY"
 ```
 
-Watch the run:
+The workflow form also allows you to change the Azure region, naming prefix,
+and both Container App names.
 
-```bash
-gh run watch
-```
+## 4. Configure SPA redirects
 
-The workflow runs only when manually dispatched.
+Copy both Container App URLs from the workflow summary. Add each URL under
+**Authentication > Single-page application** on its matching SPA registration:
 
-The workflow:
-
-1. signs in to Azure with OIDC;
-2. validates and deploys the resource group and shared foundation with Bicep;
-3. builds both images in ACR with immutable commit-SHA tags;
-4. validates and deploys both Container Apps with Bicep;
-5. verifies both `/health` endpoints; and
-6. publishes both application URLs in the workflow summary.
-
-## 4. Add SPA redirect URIs
-
-Both clients use their current origin as the MSAL redirect URI. After the first
-deployment, copy the two URLs from the workflow summary.
-
-In the Azure portal, open each matching SPA application registration:
-
-1. Select **Authentication**.
-2. Under **Single-page application**, add that application's Container App URL.
-3. Do not remove its existing local or deployed redirect URIs.
-4. Save the application.
-
-Use the managed URL only on the managed SPA registration and the passthrough URL
-only on the passthrough SPA registration.
-
-## Resources
-
-The default names are:
-
-```text
-Resource group: rg-azmcp-webapps-dev
-Container Apps environment: cae-azmcp-webapps-dev
-Managed web app: ca-azmcp-managed-identity
-Passthrough web app: ca-azmcp-user-passthrough
-```
-
-The registry name has a stable generated suffix because ACR names must be
-globally unique.
-
-Both apps use public HTTPS ingress, scale from zero to three replicas, and pull
-images with a shared user-assigned identity that has only `AcrPull`.
+- Managed URL → managed-identity SPA
+- User-passthrough URL → user-passthrough SPA
 
 ## Cleanup
 
-Delete only the shared web-host resource group:
-
 ```bash
-az group delete \
-  --name rg-azmcp-webapps-dev \
-  --yes \
-  --no-wait
+NAMING_PREFIX="azmcp-webapps-dev"
+
+az group delete --name "rg-${NAMING_PREFIX}" --yes --no-wait
 ```
 
-This does not delete either existing APIM, Foundry, MCP, or Entra deployment.
+This deletes only the shared web-host resources.

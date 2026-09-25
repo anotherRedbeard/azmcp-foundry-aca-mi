@@ -49,17 +49,9 @@ Create or reuse a single-tenant SPA registration:
 4. Grant consent according to tenant policy.
 5. Do not create a client secret.
 
-Azure Machine Learning Services application ID:
-
-```text
-18a66f5f-dbdf-4c17-9dd7-1634712a9cbe
-```
-
-`user_impersonation` permission ID:
-
-```text
-1a7925b5-f871-417a-9b8b-303f9f29fa10
-```
+Select **Azure Machine Learning Services** by name, then add its delegated
+`user_impersonation` permission. No application or permission ID needs to be
+copied into this repository.
 
 ### Foundry MCP OAuth client
 
@@ -104,8 +96,8 @@ Replace every placeholder in `azd.env`:
 AZURE_LOCATION="eastus2"
 APIM_PUBLISHER_NAME="Contoso Publisher"
 APIM_PUBLISHER_EMAIL="admin@example.com"
-SPA_CLIENT_ID="00000000-0000-0000-0000-000000000000"
-API_CLIENT_ID="00000000-0000-0000-0000-000000000000"
+SPA_CLIENT_ID="<spa-client-id>"
+API_CLIENT_ID="<foundry-mcp-oauth-client-id>"
 WEB_APP_ORIGIN="http://localhost:3000"
 ```
 
