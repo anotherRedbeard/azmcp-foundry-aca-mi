@@ -6,125 +6,64 @@ Foundry, MCP, and Entra resources. It does not use `azd`.
 
 ## Prerequisites
 
-- Azure CLI and GitHub CLI
 - An Entra application for GitHub Actions
 - `Contributor` and `User Access Administrator` on the target subscription
 - Existing managed-identity and user-passthrough deployments
 
-Set these values:
-
-```bash
-GITHUB_REPOSITORY="<owner>/<repository>"
-GITHUB_ENVIRONMENT="azure-webapps-dev"
-DEPLOYMENT_CLIENT_ID="<github-deployment-client-id>"
-AZURE_TENANT_ID="<azure-tenant-id>"
-AZURE_SUBSCRIPTION_ID="<azure-subscription-id>"
-```
-
-Find the current tenant and subscription:
-
-```bash
-az account show --query "{tenantId:tenantId, subscriptionId:id}" --output table
-```
-
 ## 1. Configure GitHub OIDC
 
-Create a federated credential on the deployment application:
+On the Entra application used by GitHub Actions, add a federated credential for
+a GitHub Actions deployment environment:
 
-```bash
-jq -n \
-  --arg name "github-${GITHUB_ENVIRONMENT}" \
-  --arg subject "repo:${GITHUB_REPOSITORY}:environment:${GITHUB_ENVIRONMENT}" \
-  '{
-    name: $name,
-    issuer: "https://token.actions.githubusercontent.com",
-    subject: $subject,
-    audiences: ["api://AzureADTokenExchange"]
-  }' > federated-credential.json
+| Setting | Value |
+| --- | --- |
+| Organization | `<github-owner>` |
+| Repository | `<github-repository>` |
+| Entity type | Environment |
+| Environment | `<github-environment>` |
+| Credential name | Any descriptive name |
 
-az ad app federated-credential create \
-  --id "$DEPLOYMENT_CLIENT_ID" \
-  --parameters @federated-credential.json
-
-rm federated-credential.json
-```
+The environment value must exactly match the GitHub Environment selected when
+the workflow runs.
 
 ## 2. Configure the GitHub Environment
 
-```bash
-gh api --method PUT \
-  "repos/${GITHUB_REPOSITORY}/environments/${GITHUB_ENVIRONMENT}"
+Create the GitHub Environment and add these variables:
 
-gh variable set AZURE_CLIENT_ID \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "$DEPLOYMENT_CLIENT_ID"
+| Variable | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | `<github-deployment-client-id>` |
+| `AZURE_TENANT_ID` | `<azure-tenant-id>` |
+| `AZURE_SUBSCRIPTION_ID` | `<azure-subscription-id>` |
+| `MANAGED_ENTRA_SPA_CLIENT_ID` | `<managed-spa-client-id>` |
+| `MANAGED_ENTRA_API_SCOPE` | `api://<managed-responses-api-client-id>/access_as_user` |
+| `MANAGED_APIM_RESPONSES_URL` | `https://<managed-apim-name>.azure-api.net/agent/responses` |
+| `PASSTHROUGH_ENTRA_SPA_CLIENT_ID` | `<passthrough-spa-client-id>` |
+| `PASSTHROUGH_FOUNDRY_API_SCOPE` | `https://ai.azure.com/user_impersonation` |
+| `PASSTHROUGH_APIM_RESPONSES_URL` | `https://<passthrough-apim-name>.azure-api.net/agent/responses` |
 
-gh variable set AZURE_TENANT_ID \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "$AZURE_TENANT_ID"
+Add these environment secrets:
 
-gh variable set AZURE_SUBSCRIPTION_ID \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "$AZURE_SUBSCRIPTION_ID"
-```
-
-Add the managed-identity settings:
-
-```bash
-gh variable set MANAGED_ENTRA_SPA_CLIENT_ID \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "<managed-spa-client-id>"
-
-gh variable set MANAGED_ENTRA_API_SCOPE \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "api://<managed-responses-api-client-id>/access_as_user"
-
-gh variable set MANAGED_APIM_RESPONSES_URL \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "https://<managed-apim-name>.azure-api.net/agent/responses"
-```
-
-Add the user-passthrough settings:
-
-```bash
-gh variable set PASSTHROUGH_ENTRA_SPA_CLIENT_ID \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "<passthrough-spa-client-id>"
-
-gh variable set PASSTHROUGH_FOUNDRY_API_SCOPE \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "https://ai.azure.com/user_impersonation"
-
-gh variable set PASSTHROUGH_APIM_RESPONSES_URL \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT" \
-  --body "https://<passthrough-apim-name>.azure-api.net/agent/responses"
-```
-
-Add both APIM subscription keys when prompted:
-
-```bash
-gh secret set MANAGED_APIM_SUBSCRIPTION_KEY \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT"
-
-gh secret set PASSTHROUGH_APIM_SUBSCRIPTION_KEY \
-  --repo "$GITHUB_REPOSITORY" --env "$GITHUB_ENVIRONMENT"
-```
+| Secret | Value |
+| --- | --- |
+| `MANAGED_APIM_SUBSCRIPTION_KEY` | Managed-identity APIM subscription key |
+| `PASSTHROUGH_APIM_SUBSCRIPTION_KEY` | User-passthrough APIM subscription key |
 
 ## 3. Deploy
 
-Run the manual workflow:
+Run **Deploy dual web apps** from the repository's **Actions** page.
 
-```bash
-gh workflow run deploy-web-apps.yml \
-  --repo "$GITHUB_REPOSITORY" \
-  --ref main \
-  --field github_environment="$GITHUB_ENVIRONMENT"
+The workflow inputs allow you to select:
 
-gh run watch --repo "$GITHUB_REPOSITORY"
-```
+- GitHub Environment
+- Azure region
+- Resource naming prefix
+- Managed-identity Container App name
+- User-passthrough Container App name
 
-The workflow form also allows you to change the Azure region, naming prefix,
-and both Container App names.
+The workflow validates the Bicep templates, builds both images in ACR, deploys
+both Container Apps, verifies their health endpoints, and publishes both URLs
+in the run summary.
 
 ## 4. Configure SPA redirects
 
@@ -136,10 +75,11 @@ Copy both Container App URLs from the workflow summary. Add each URL under
 
 ## Cleanup
 
-```bash
-NAMING_PREFIX="azmcp-webapps-dev"
+Delete the resource group created by the workflow. With the default naming
+prefix, its name is:
 
-az group delete --name "rg-${NAMING_PREFIX}" --yes --no-wait
+```text
+rg-azmcp-webapps-dev
 ```
 
 This deletes only the shared web-host resources.
