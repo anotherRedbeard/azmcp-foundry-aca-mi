@@ -4,8 +4,17 @@ param location string = resourceGroup().location
 @description('Name for the Azure Container App')
 param acaName string
 
-@description('Display name for the Entra App protecting Azure MCP')
-param entraAppDisplayName string
+@description('Client ID of the manually created Entra application protecting Azure MCP')
+param mcpAppClientId string
+
+@description('Object ID of the MCP application service principal')
+param mcpAppServicePrincipalObjectId string
+
+@description('Application ID URI of the MCP application')
+param mcpAppIdentifierUri string
+
+@description('Delegated permission scope ID for Mcp.Tools.ReadWrite')
+param mcpAppScopeId string
 
 @description('API Management service name. Leave empty to generate a stable name.')
 param apimName string = ''
@@ -110,17 +119,6 @@ module acaManagedIdentity 'modules/aca-user-assigned-identity.bicep' = {
   }
 }
 
-var entraAppUniqueName = '${replace(toLower(entraAppDisplayName), ' ', '-')}-${uniqueString(tenant().tenantId, subscription().id, entraAppDisplayName)}'
-module entraApp 'modules/entra-app.bicep' = {
-  name: 'entra-app-deployment'
-  params: {
-    entraAppDisplayName: entraAppDisplayName
-    entraAppUniqueName: entraAppUniqueName
-    managedIdentityPrincipalId: acaManagedIdentity.outputs.principalId
-    tokenExchangeAudience: tokenExchangeAudience
-  }
-}
-
 module acaInfrastructure 'modules/aca-infrastructure.bicep' = {
   name: 'aca-infrastructure-deployment'
   params: {
@@ -131,7 +129,7 @@ module acaInfrastructure 'modules/aca-infrastructure.bicep' = {
     logAnalyticsCustomerId: appInsights.outputs.logAnalyticsCustomerId
     logAnalyticsSharedKey: appInsights.outputs.logAnalyticsSharedKey
     azureAdTenantId: tenant().tenantId
-    azureAdClientId: entraApp.outputs.entraAppClientId
+    azureAdClientId: mcpAppClientId
     userAssignedManagedIdentityId: acaManagedIdentity.outputs.resourceId
     userAssignedManagedIdentityClientId: acaManagedIdentity.outputs.clientId
     tokenExchangeAudience: tokenExchangeAudience
@@ -157,7 +155,7 @@ module apim 'modules/apim.bicep' = {
     allowedWebOrigins: allowedWebOrigins
     foundryResponsesUrl: '${foundry.outputs.projectEndpoint}/openai/v1'
     mcpBackendUrl: acaInfrastructure.outputs.containerAppUrl
-    mcpClientId: entraApp.outputs.entraAppClientId
+    mcpClientId: mcpAppClientId
     appInsightsInstrumentationKey: appInsights.outputs.instrumentationKey
     appInsightsResourceId: appInsights.outputs.resourceId
   }
@@ -171,12 +169,11 @@ output SPA_CLIENT_ID string = spaClientId
 output API_CLIENT_ID string = apiClientId
 output FOUNDRY_API_SCOPE string = 'https://ai.azure.com/user_impersonation'
 
-output ENTRA_APP_CLIENT_ID string = entraApp.outputs.entraAppClientId
-output ENTRA_APP_OBJECT_ID string = entraApp.outputs.entraAppObjectId
-output ENTRA_APP_SERVICE_PRINCIPAL_ID string = entraApp.outputs.entraAppServicePrincipalObjectId
-output ENTRA_APP_IDENTIFIER_URI string = entraApp.outputs.entraAppIdentifierUri
-output ENTRA_APP_SCOPE_ID string = entraApp.outputs.entraAppScopeId
-output ENTRA_APP_SCOPE_VALUE string = entraApp.outputs.entraAppScopeValue
+output ENTRA_APP_CLIENT_ID string = mcpAppClientId
+output ENTRA_APP_SERVICE_PRINCIPAL_ID string = mcpAppServicePrincipalObjectId
+output ENTRA_APP_IDENTIFIER_URI string = mcpAppIdentifierUri
+output ENTRA_APP_SCOPE_ID string = mcpAppScopeId
+output ENTRA_APP_SCOPE_VALUE string = 'Mcp.Tools.ReadWrite'
 
 output CONTAINER_APP_URL string = acaInfrastructure.outputs.containerAppUrl
 output CONTAINER_APP_NAME string = acaInfrastructure.outputs.containerAppName

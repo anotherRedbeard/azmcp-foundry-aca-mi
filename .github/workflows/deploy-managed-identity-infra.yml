@@ -49,6 +49,11 @@ jobs:
       APIM_PUBLISHER_EMAIL: ${{ vars.APIM_PUBLISHER_EMAIL }}
       SPA_CLIENT_ID: ${{ vars.SPA_CLIENT_ID }}
       RESPONSES_API_CLIENT_ID: ${{ vars.RESPONSES_API_CLIENT_ID }}
+      MCP_APP_CLIENT_ID: ${{ vars.MCP_APP_CLIENT_ID }}
+      MCP_APP_SERVICE_PRINCIPAL_ID: ${{ vars.MCP_APP_SERVICE_PRINCIPAL_ID }}
+      MCP_APP_IDENTIFIER_URI: ${{ vars.MCP_APP_IDENTIFIER_URI }}
+      MCP_TOOLS_APP_ROLE_ID: ${{ vars.MCP_TOOLS_APP_ROLE_ID }}
+      MCP_INSPECTOR_APP_ROLE_ID: ${{ vars.MCP_INSPECTOR_APP_ROLE_ID }}
       WEB_APP_ORIGIN: ${{ vars.WEB_APP_ORIGIN || 'http://localhost:3000' }}
 
     steps:
@@ -70,7 +75,12 @@ jobs:
             APIM_PUBLISHER_NAME \
             APIM_PUBLISHER_EMAIL \
             SPA_CLIENT_ID \
-            RESPONSES_API_CLIENT_ID; do
+            RESPONSES_API_CLIENT_ID \
+            MCP_APP_CLIENT_ID \
+            MCP_APP_SERVICE_PRINCIPAL_ID \
+            MCP_APP_IDENTIFIER_URI \
+            MCP_TOOLS_APP_ROLE_ID \
+            MCP_INSPECTOR_APP_ROLE_ID; do
             if [[ -z "${!name}" ]]; then
               echo "::error::GitHub Environment variable $name is required."
               exit 1
@@ -111,7 +121,11 @@ jobs:
             --parameters \
               location="$AZURE_LOCATION" \
               acaName="$CONTAINER_APP_NAME" \
-              entraAppDisplayName="Azure MCP Managed Identity API" \
+              mcpAppClientId="$MCP_APP_CLIENT_ID" \
+              mcpAppServicePrincipalObjectId="$MCP_APP_SERVICE_PRINCIPAL_ID" \
+              mcpAppIdentifierUri="$MCP_APP_IDENTIFIER_URI" \
+              mcpToolsAppRoleId="$MCP_TOOLS_APP_ROLE_ID" \
+              mcpInspectorAppRoleId="$MCP_INSPECTOR_APP_ROLE_ID" \
               foundryProjectName="managed-identity" \
               apimPublisherName="$APIM_PUBLISHER_NAME" \
               apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
@@ -133,7 +147,11 @@ jobs:
             --parameters \
               location="$AZURE_LOCATION" \
               acaName="$CONTAINER_APP_NAME" \
-              entraAppDisplayName="Azure MCP Managed Identity API" \
+              mcpAppClientId="$MCP_APP_CLIENT_ID" \
+              mcpAppServicePrincipalObjectId="$MCP_APP_SERVICE_PRINCIPAL_ID" \
+              mcpAppIdentifierUri="$MCP_APP_IDENTIFIER_URI" \
+              mcpToolsAppRoleId="$MCP_TOOLS_APP_ROLE_ID" \
+              mcpInspectorAppRoleId="$MCP_INSPECTOR_APP_ROLE_ID" \
               foundryProjectName="managed-identity" \
               apimPublisherName="$APIM_PUBLISHER_NAME" \
               apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
@@ -172,6 +190,8 @@ jobs:
             echo "| MCP API | $(value MCP_API_URL) |"
             echo "| Foundry project | $(value AZURE_AI_PROJECT_ENDPOINT) |"
             echo "| MCP application ID | \`$(value ENTRA_APP_CLIENT_ID)\` |"
+            echo "| Foundry project principal | \`$(value AZURE_AI_PROJECT_PRINCIPAL_ID)\` |"
+            echo "| APIM principal | \`$(value APIM_PRINCIPAL_ID)\` |"
             echo
-            echo "Continue with the manual Foundry agent and MCP connection steps in \`managed-identity/README.md\`."
+            echo "Continue with the manual MCP app-role assignments, Foundry agent, and MCP connection steps in \`managed-identity/README.md\`."
           } >> "$GITHUB_STEP_SUMMARY"

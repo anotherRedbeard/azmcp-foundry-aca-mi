@@ -56,7 +56,11 @@ Each variant independently deploys:
 - `gpt-5-mini` and `gpt-5`
 - A narrow APIM Responses API
 - A variant-specific APIM passthrough MCP server
-- Identity configuration and role assignments for that flow
+- Azure identities and role assignments required by that flow
+
+All Entra app registrations, application roles, delegated scopes, API
+permissions, consent, and federated credentials are configured manually before
+or after the infrastructure workflow as documented by each variant.
 
 The prompt agent and its direct MCP tool are configured after infrastructure provisioning. Neither deployment uses a Foundry toolbox.
 

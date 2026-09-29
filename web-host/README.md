@@ -27,10 +27,9 @@ The deployment identity needs `Contributor` on the target subscription. The
 managed-identity core workflow and both web workflows create role assignments
 and therefore also need `User Access Administrator`.
 
-The core workflows create Entra applications through the Microsoft Graph Bicep
-extension. Grant the deployment identity the tenant-level Microsoft Graph
-application permissions required to create applications, service principals,
-and federated credentials.
+The workflows do not create or modify Entra applications. Create the
+variant-specific app registrations manually by following the selected
+variant's README before running its infrastructure workflow.
 
 ## GitHub Environments
 

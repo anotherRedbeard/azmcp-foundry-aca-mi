@@ -49,6 +49,10 @@ jobs:
       APIM_PUBLISHER_EMAIL: ${{ vars.APIM_PUBLISHER_EMAIL }}
       SPA_CLIENT_ID: ${{ vars.SPA_CLIENT_ID }}
       API_CLIENT_ID: ${{ vars.API_CLIENT_ID }}
+      MCP_APP_CLIENT_ID: ${{ vars.MCP_APP_CLIENT_ID }}
+      MCP_APP_SERVICE_PRINCIPAL_ID: ${{ vars.MCP_APP_SERVICE_PRINCIPAL_ID }}
+      MCP_APP_IDENTIFIER_URI: ${{ vars.MCP_APP_IDENTIFIER_URI }}
+      MCP_APP_SCOPE_ID: ${{ vars.MCP_APP_SCOPE_ID }}
       WEB_APP_ORIGIN: ${{ vars.WEB_APP_ORIGIN || 'http://localhost:3000' }}
 
     steps:
@@ -70,7 +74,11 @@ jobs:
             APIM_PUBLISHER_NAME \
             APIM_PUBLISHER_EMAIL \
             SPA_CLIENT_ID \
-            API_CLIENT_ID; do
+            API_CLIENT_ID \
+            MCP_APP_CLIENT_ID \
+            MCP_APP_SERVICE_PRINCIPAL_ID \
+            MCP_APP_IDENTIFIER_URI \
+            MCP_APP_SCOPE_ID; do
             if [[ -z "${!name}" ]]; then
               echo "::error::GitHub Environment variable $name is required."
               exit 1
@@ -111,7 +119,10 @@ jobs:
             --parameters \
               location="$AZURE_LOCATION" \
               acaName="$CONTAINER_APP_NAME" \
-              entraAppDisplayName="Azure MCP User Passthrough API" \
+              mcpAppClientId="$MCP_APP_CLIENT_ID" \
+              mcpAppServicePrincipalObjectId="$MCP_APP_SERVICE_PRINCIPAL_ID" \
+              mcpAppIdentifierUri="$MCP_APP_IDENTIFIER_URI" \
+              mcpAppScopeId="$MCP_APP_SCOPE_ID" \
               foundryProjectName="user-passthrough" \
               apimPublisherName="$APIM_PUBLISHER_NAME" \
               apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
@@ -133,7 +144,10 @@ jobs:
             --parameters \
               location="$AZURE_LOCATION" \
               acaName="$CONTAINER_APP_NAME" \
-              entraAppDisplayName="Azure MCP User Passthrough API" \
+              mcpAppClientId="$MCP_APP_CLIENT_ID" \
+              mcpAppServicePrincipalObjectId="$MCP_APP_SERVICE_PRINCIPAL_ID" \
+              mcpAppIdentifierUri="$MCP_APP_IDENTIFIER_URI" \
+              mcpAppScopeId="$MCP_APP_SCOPE_ID" \
               foundryProjectName="user-passthrough" \
               apimPublisherName="$APIM_PUBLISHER_NAME" \
               apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
@@ -173,6 +187,7 @@ jobs:
             echo "| Foundry project | $(value AZURE_AI_PROJECT_ENDPOINT) |"
             echo "| MCP application ID | \`$(value ENTRA_APP_CLIENT_ID)\` |"
             echo "| MCP delegated scope ID | \`$(value ENTRA_APP_SCOPE_ID)\` |"
+            echo "| OBO managed identity principal | \`$(value CONTAINER_APP_PRINCIPAL_ID)\` |"
             echo
-            echo "Continue with admin consent, manual Foundry agent creation, and manual OAuth MCP connection setup in \`user-passthrough/README.md\`."
+            echo "Continue with the manual federated credential, admin consent, Foundry agent, and OAuth MCP connection steps in \`user-passthrough/README.md\`."
           } >> "$GITHUB_STEP_SUMMARY"

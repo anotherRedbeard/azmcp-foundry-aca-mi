@@ -27,14 +27,13 @@ The editable diagram is [`foundry-apim-mcp-managed-identity.excalidraw`](foundry
 - Permission to configure Entra application registrations
 - A GitHub Actions deployment application configured for OIDC
 - `Contributor` and `User Access Administrator` on the target subscription
-- Microsoft Graph application permissions required to create applications and service principals
 
 See [`../web-host/README.md`](../web-host/README.md) for the GitHub OIDC
 federated-credential pattern.
 
 ## 1. Configure Entra applications
 
-Create or reuse two single-tenant registrations.
+Create or reuse three single-tenant registrations.
 
 ### SPA registration
 
@@ -52,6 +51,27 @@ Create or reuse two single-tenant registrations.
 
 Record both application/client IDs.
 
+### MCP protected API registration
+
+Create a single-tenant registration for the managed-identity MCP endpoint:
+
+1. Set its Application ID URI to `api://<mcp-app-client-id>`.
+2. Set `requestedAccessTokenVersion` to `2`.
+3. Add delegated scope `Mcp.Tools.ReadWrite`.
+4. Add application role `Mcp.Tools.ReadWrite.All` with **Applications** as the
+   allowed member type.
+5. Add application role `Mcp.Inspector.Access` with **Users/Groups** as the
+   allowed member type.
+6. Ensure its enterprise application/service principal exists.
+
+Record:
+
+- Application/client ID
+- Enterprise application object ID
+- Application ID URI
+- `Mcp.Tools.ReadWrite.All` role ID
+- `Mcp.Inspector.Access` role ID
+
 ## 2. Configure the infrastructure workflow
 
 Create the `managed-identity-infra-dev` GitHub Environment. Add these variables:
@@ -65,6 +85,11 @@ Create the `managed-identity-infra-dev` GitHub Environment. Add these variables:
 | `APIM_PUBLISHER_EMAIL` | APIM publisher email |
 | `SPA_CLIENT_ID` | SPA application client ID |
 | `RESPONSES_API_CLIENT_ID` | Protected Responses API client ID |
+| `MCP_APP_CLIENT_ID` | MCP protected API application/client ID |
+| `MCP_APP_SERVICE_PRINCIPAL_ID` | MCP enterprise application object ID |
+| `MCP_APP_IDENTIFIER_URI` | MCP Application ID URI |
+| `MCP_TOOLS_APP_ROLE_ID` | `Mcp.Tools.ReadWrite.All` application role ID |
+| `MCP_INSPECTOR_APP_ROLE_ID` | `Mcp.Inspector.Access` application role ID |
 | `WEB_APP_ORIGIN` | Initial allowed origin, normally `http://localhost:3000` |
 
 ## 3. Set the Foundry agent name
@@ -110,9 +135,35 @@ AZURE_AI_GPT5_DEPLOYMENT_NAME="$(deployment_output AZURE_AI_GPT5_DEPLOYMENT_NAME
 AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME="$(deployment_output AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME)"
 MCP_API_URL="$(deployment_output MCP_API_URL)"
 CONTAINER_APP_NAME="$(deployment_output CONTAINER_APP_NAME)"
+FOUNDRY_PROJECT_PRINCIPAL_ID="$(deployment_output AZURE_AI_PROJECT_PRINCIPAL_ID)"
+APIM_PRINCIPAL_ID="$(deployment_output APIM_PRINCIPAL_ID)"
+MCP_SERVICE_PRINCIPAL_ID="$(deployment_output ENTRA_APP_SERVICE_PRINCIPAL_ID)"
+MCP_TOOLS_ROLE_ID="$(deployment_output ENTRA_APP_ROLE_ID)"
+MCP_IDENTIFIER_URI="$(deployment_output ENTRA_APP_IDENTIFIER_URI)"
 ```
 
-## 5. Create the Foundry agent
+## 5. Assign the MCP application role
+
+Assign `Mcp.Tools.ReadWrite.All` to both the Foundry project managed identity
+and the APIM managed identity:
+
+```bash
+assign_mcp_role() {
+  local principal_id="$1"
+  az rest \
+    --method post \
+    --url "https://graph.microsoft.com/v1.0/servicePrincipals/${MCP_SERVICE_PRINCIPAL_ID}/appRoleAssignedTo" \
+    --body "{\"principalId\":\"${principal_id}\",\"resourceId\":\"${MCP_SERVICE_PRINCIPAL_ID}\",\"appRoleId\":\"${MCP_TOOLS_ROLE_ID}\"}"
+}
+
+assign_mcp_role "$FOUNDRY_PROJECT_PRINCIPAL_ID"
+assign_mcp_role "$APIM_PRINCIPAL_ID"
+```
+
+These assignments are intentionally manual and are not created by the workflow.
+Allow several minutes for them to propagate.
+
+## 6. Create the Foundry agent
 
 Before creating the agent, grant your signed-in user the **Foundry User** role on the deployed Foundry project:
 
@@ -131,7 +182,7 @@ Then, in the deployed Foundry project:
 2. Use `AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME` for initial testing or `AZURE_AI_GPT5_DEPLOYMENT_NAME` for higher-quality testing.
 3. Save and publish the agent.
 
-## 6. Connect the agent to APIM MCP
+## 7. Connect the agent to APIM MCP
 
 1. Open the agent in Foundry.
 2. Select **Add tool** -> **Custom** -> **Model Context Protocol**.
@@ -142,13 +193,13 @@ Then, in the deployed Foundry project:
    ```
 
 4. Select **Microsoft Entra** and **Project Managed Identity**.
-5. Set the audience to the `ENTRA_APP_IDENTIFIER_URI` output.
+5. Set the audience to `$MCP_IDENTIFIER_URI`.
 6. Set `require_approval` to `always` so the sample web application prompts before MCP tool execution.
 7. Save the connection and attach it directly to the agent.
 
 Use `$MCP_API_URL`, not the Container App URL.
 
-## 7. Test the agent
+## 8. Test the agent
 
 In the Foundry agent playground, submit:
 
@@ -159,7 +210,7 @@ Return the resource group name and location.
 
 Approve the MCP tool call when prompted. Results are limited by the Container App managed identity's Azure RBAC assignments.
 
-## 8. Run or deploy the web application
+## 9. Run or deploy the web application
 
 For local development, retrieve the APIM test subscription key and store it
 only in the web application's `.env` file.
@@ -177,7 +228,7 @@ To deploy the optional hosted application, run **Deploy managed-identity web
 app**. Follow [`../web-host/README.md`](../web-host/README.md) to replace the
 placeholder APIM key and add the deployed SPA redirect URI.
 
-## 9. Use MCP Inspector through APIM
+## 10. Use MCP Inspector through APIM
 
 To use MCP Inspector through APIM, first assign your user the **Azure MCP Inspector Access** role on the MCP enterprise application:
 

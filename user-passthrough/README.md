@@ -29,8 +29,6 @@ The editable diagram is [`foundry-apim-mcp-user-passthrough.excalidraw`](foundry
 - Permission to configure Entra applications, federated credentials, and tenant-wide delegated API consent
 - A GitHub Actions deployment application configured for OIDC
 - `Contributor` on the target subscription
-- Microsoft Graph application permissions required to create applications,
-  service principals, and federated credentials
 
 See [`../web-host/README.md`](../web-host/README.md) for the GitHub OIDC
 federated-credential pattern.
@@ -61,6 +59,27 @@ Create a separate single-tenant confidential client:
 
 The secret belongs only in the Foundry connection. Do not commit it or add it to the web application.
 
+### MCP protected API registration
+
+Create a single-tenant registration for the OBO MCP endpoint:
+
+1. Set its Application ID URI to `api://<mcp-app-client-id>`.
+2. Set `requestedAccessTokenVersion` to `2`.
+3. Add delegated scope `Mcp.Tools.ReadWrite`.
+4. Add these delegated API permissions:
+   - Azure Service Management `user_impersonation`
+   - Azure Storage `user_impersonation`
+   - Azure Resource Manager MCP `MCP.Access`
+5. Grant tenant-wide admin consent.
+6. Ensure its enterprise application/service principal exists.
+
+Record:
+
+- Application/client ID
+- Enterprise application object ID
+- Application ID URI
+- `Mcp.Tools.ReadWrite` delegated scope ID
+
 ## 2. Configure the infrastructure workflow
 
 Create the `user-passthrough-infra-dev` GitHub Environment. Add these variables:
@@ -74,6 +93,10 @@ Create the `user-passthrough-infra-dev` GitHub Environment. Add these variables:
 | `APIM_PUBLISHER_EMAIL` | APIM publisher email |
 | `SPA_CLIENT_ID` | SPA application client ID |
 | `API_CLIENT_ID` | Confidential Foundry MCP OAuth client ID |
+| `MCP_APP_CLIENT_ID` | MCP protected API application/client ID |
+| `MCP_APP_SERVICE_PRINCIPAL_ID` | MCP enterprise application object ID |
+| `MCP_APP_IDENTIFIER_URI` | MCP Application ID URI |
+| `MCP_APP_SCOPE_ID` | `Mcp.Tools.ReadWrite` delegated scope ID |
 | `WEB_APP_ORIGIN` | Initial allowed origin, normally `http://localhost:3000` |
 
 Do not add the confidential client's secret to GitHub. It is entered only when
@@ -125,15 +148,17 @@ AZURE_AI_PROJECT_ENDPOINT="$(deployment_output AZURE_AI_PROJECT_ENDPOINT)"
 AZURE_AI_GPT5_DEPLOYMENT_NAME="$(deployment_output AZURE_AI_GPT5_DEPLOYMENT_NAME)"
 AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME="$(deployment_output AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME)"
 CONTAINER_APP_NAME="$(deployment_output CONTAINER_APP_NAME)"
+OBO_MANAGED_IDENTITY_PRINCIPAL_ID="$(deployment_output CONTAINER_APP_PRINCIPAL_ID)"
 ```
 
-The deployment declares these downstream delegated permissions on the MCP server application:
+The manually created MCP application must contain these downstream delegated
+permissions:
 
 - Azure Resource Manager `user_impersonation`
 - Azure Storage `user_impersonation`
 - Azure Resource Manager MCP `MCP.Access`
 
-It also ensures the first-party **ARM MCP Server** enterprise application exists in the tenant. Grant tenant-wide admin consent for all three permissions:
+Grant tenant-wide admin consent for all three permissions:
 
 ```bash
 az ad app permission admin-consent --id "$ENTRA_APP_CLIENT_ID"
@@ -141,7 +166,23 @@ az ad app permission admin-consent --id "$ENTRA_APP_CLIENT_ID"
 
 Do not grant Reader or data-plane roles to the OBO managed identity. Azure authorization must come from the signed-in user.
 
-## 5. Create the Foundry agent
+## 5. Add the OBO federated credential
+
+On the manually created MCP app registration, open **Certificates & secrets >
+Federated credentials** and add:
+
+| Setting | Value |
+| --- | --- |
+| Issuer | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
+| Subject | `$OBO_MANAGED_IDENTITY_PRINCIPAL_ID` |
+| Audience | `api://AzureADTokenExchange` |
+| Name | `AzureMcpServerCredential` |
+
+The subject is the managed identity's principal/object ID, not its client ID.
+This step is intentionally manual because the managed identity is created by
+the infrastructure workflow.
+
+## 6. Create the Foundry agent
 
 Before creating the agent, grant your signed-in user the **Foundry User** role on the deployed Foundry project:
 
@@ -160,7 +201,7 @@ Then, in the deployed Foundry project:
 2. Use `AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME` for initial testing or `AZURE_AI_GPT5_DEPLOYMENT_NAME` for higher-quality testing.
 3. Save and publish the agent.
 
-## 6. Create the OAuth MCP connection
+## 7. Create the OAuth MCP connection
 
 Grant the confidential OAuth client the MCP application's delegated `Mcp.Tools.ReadWrite` permission:
 
@@ -193,7 +234,7 @@ Set `project_connection_id` to `AzureMcpApim2` and use `require_approval: always
 
 Do not use Project Managed Identity or Agent Identity for this connection.
 
-## 7. Test the agent
+## 8. Test the agent
 
 In the Foundry agent playground, submit:
 
@@ -211,7 +252,7 @@ The user needs:
 - Consent for `Mcp.Tools.ReadWrite`
 - Azure RBAC for the resources being queried
 
-## 8. Run or deploy the web application
+## 9. Run or deploy the web application
 
 Retrieve the APIM test subscription key through an authorized workflow and store it only in the web application's `.env` file.
 

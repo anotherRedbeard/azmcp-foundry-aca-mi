@@ -4,8 +4,20 @@ param location string = resourceGroup().location
 @description('Name for the Azure Container App')
 param acaName string
 
-@description('Display name for the Entra App protecting Azure MCP')
-param entraAppDisplayName string
+@description('Client ID of the manually created Entra application protecting Azure MCP')
+param mcpAppClientId string
+
+@description('Object ID of the MCP application service principal')
+param mcpAppServicePrincipalObjectId string
+
+@description('Application ID URI of the MCP application')
+param mcpAppIdentifierUri string
+
+@description('Application role ID for Mcp.Tools.ReadWrite.All')
+param mcpToolsAppRoleId string
+
+@description('User role ID for Mcp.Inspector.Access')
+param mcpInspectorAppRoleId string
 
 @description('API Management service name. Leave empty to generate a stable name.')
 param apimName string = ''
@@ -96,15 +108,6 @@ module foundry 'modules/foundry.bicep' = {
   }
 }
 
-var entraAppUniqueName = '${replace(toLower(entraAppDisplayName), ' ', '-')}-${uniqueString(tenant().tenantId, subscription().id, entraAppDisplayName)}'
-module entraApp 'modules/entra-app.bicep' = {
-  name: 'entra-app-deployment'
-  params: {
-    entraAppDisplayName: entraAppDisplayName
-    entraAppUniqueName: entraAppUniqueName
-  }
-}
-
 module acaInfrastructure 'modules/aca-infrastructure.bicep' = {
   name: 'aca-infrastructure-deployment'
   params: {
@@ -115,7 +118,7 @@ module acaInfrastructure 'modules/aca-infrastructure.bicep' = {
     logAnalyticsCustomerId: appInsights.outputs.logAnalyticsCustomerId
     logAnalyticsSharedKey: appInsights.outputs.logAnalyticsSharedKey
     azureAdTenantId: tenant().tenantId
-    azureAdClientId: entraApp.outputs.entraAppClientId
+    azureAdClientId: mcpAppClientId
     namespaces: [
       'storage'
       'subscription'
@@ -149,28 +152,10 @@ module apim 'modules/apim.bicep' = {
     allowedWebOrigins: allowedWebOrigins
     foundryResponsesUrl: '${foundry.outputs.projectEndpoint}/openai/v1'
     mcpBackendUrl: acaInfrastructure.outputs.containerAppUrl
-    mcpClientId: entraApp.outputs.entraAppClientId
+    mcpClientId: mcpAppClientId
     foundryProjectPrincipalId: foundry.outputs.projectPrincipalId
     appInsightsInstrumentationKey: appInsights.outputs.instrumentationKey
     appInsightsResourceId: appInsights.outputs.resourceId
-  }
-}
-
-module foundryMcpRoleAssignment './modules/foundry-role-assignment-entraapp.bicep' = {
-  name: 'foundry-mcp-application-role-assignment'
-  params: {
-    foundryProjectPrincipalId: foundry.outputs.projectPrincipalId
-    entraAppServicePrincipalObjectId: entraApp.outputs.entraAppServicePrincipalObjectId
-    entraAppRoleId: entraApp.outputs.entraAppRoleId
-  }
-}
-
-module apimMcpRoleAssignment './modules/entra-app-role-assignment.bicep' = {
-  name: 'apim-mcp-application-role-assignment'
-  params: {
-    principalId: apim.outputs.principalId
-    resourceServicePrincipalId: entraApp.outputs.entraAppServicePrincipalObjectId
-    appRoleId: entraApp.outputs.entraAppRoleId
   }
 }
 
@@ -191,12 +176,11 @@ output SPA_CLIENT_ID string = spaClientId
 output RESPONSES_API_CLIENT_ID string = responsesApiClientId
 output ENTRA_API_SCOPE string = 'api://${responsesApiClientId}/access_as_user'
 
-output ENTRA_APP_CLIENT_ID string = entraApp.outputs.entraAppClientId
-output ENTRA_APP_OBJECT_ID string = entraApp.outputs.entraAppObjectId
-output ENTRA_APP_SERVICE_PRINCIPAL_ID string = entraApp.outputs.entraAppServicePrincipalObjectId
-output ENTRA_APP_ROLE_ID string = entraApp.outputs.entraAppRoleId
-output ENTRA_APP_INSPECTOR_ROLE_ID string = entraApp.outputs.inspectorRoleId
-output ENTRA_APP_IDENTIFIER_URI string = entraApp.outputs.entraAppIdentifierUri
+output ENTRA_APP_CLIENT_ID string = mcpAppClientId
+output ENTRA_APP_SERVICE_PRINCIPAL_ID string = mcpAppServicePrincipalObjectId
+output ENTRA_APP_ROLE_ID string = mcpToolsAppRoleId
+output ENTRA_APP_INSPECTOR_ROLE_ID string = mcpInspectorAppRoleId
+output ENTRA_APP_IDENTIFIER_URI string = mcpAppIdentifierUri
 
 output CONTAINER_APP_URL string = acaInfrastructure.outputs.containerAppUrl
 output CONTAINER_APP_NAME string = acaInfrastructure.outputs.containerAppName
