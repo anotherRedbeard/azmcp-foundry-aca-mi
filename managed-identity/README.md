@@ -152,6 +152,13 @@ MCP_IDENTIFIER_URI="$(deployment_output ENTRA_APP_IDENTIFIER_URI)"
 Assign `Mcp.Tools.ReadWrite.All` to both the Foundry project managed identity
 and the APIM managed identity:
 
+> [!IMPORTANT]
+> Perform these assignments through the Microsoft Graph `az rest` endpoint
+> shown below. The Entra portal's **Enterprise applications > Users and
+> groups** picker supports users and groups, but it does not support selecting
+> managed identities or other service principals for an application-role
+> assignment.
+
 ```bash
 assign_mcp_role() {
   local principal_id="$1"
