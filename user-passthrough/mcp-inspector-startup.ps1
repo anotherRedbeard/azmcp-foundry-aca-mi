@@ -12,11 +12,22 @@ $DeploymentName = if ($env:AZURE_DEPLOYMENT_NAME) { $env:AZURE_DEPLOYMENT_NAME }
 function Get-DeploymentOutput {
     param([Parameter(Mandatory = $true)][string]$Name)
 
-    az deployment group show `
+    $OutputsJson = az deployment group show `
         --resource-group $ResourceGroup `
         --name $DeploymentName `
-        --query "properties.outputs.$Name.value" `
-        --output tsv
+        --query properties.outputs `
+        --output json
+
+    $Outputs = $OutputsJson | ConvertFrom-Json
+    $Property = $Outputs.PSObject.Properties |
+        Where-Object { $_.Name -ieq $Name } |
+        Select-Object -First 1
+
+    if (-not $Property) {
+        throw "Deployment output not found: $Name"
+    }
+
+    $Property.Value.value
 }
 
 $McpAppId = Get-DeploymentOutput "ENTRA_APP_CLIENT_ID"

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-for command in az npx; do
+for command in az jq npx; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Required command not found: $command" >&2
     exit 1
@@ -13,11 +13,18 @@ RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-rg-azmcp-passthrough-dev}"
 DEPLOYMENT_NAME="${AZURE_DEPLOYMENT_NAME:-user-passthrough-foundation}"
 
 deployment_output() {
+  local name="${1:?Usage: deployment_output OUTPUT_NAME}"
+
   az deployment group show \
     --resource-group "$RESOURCE_GROUP" \
     --name "$DEPLOYMENT_NAME" \
-    --query "properties.outputs.$1.value" \
-    --output tsv
+    --query properties.outputs \
+    --output json |
+    jq -er --arg name "$name" \
+      'to_entries
+       | map(select((.key | ascii_downcase) == ($name | ascii_downcase)))
+       | first
+       | .value.value'
 }
 
 MCP_APP_ID="$(deployment_output ENTRA_APP_CLIENT_ID)"

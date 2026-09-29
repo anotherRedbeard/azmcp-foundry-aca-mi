@@ -74,7 +74,11 @@ jobs:
             --output json)"
 
           for name in AZURE_TENANT_ID SPA_CLIENT_ID FOUNDRY_API_SCOPE RESPONSES_API_URL; do
-            value="$(jq -r --arg name "$name" '.[$name].value // empty' <<< "$outputs")"
+            value="$(jq -r --arg name "$name" \
+              '(to_entries
+                | map(select((.key | ascii_downcase) == ($name | ascii_downcase)))
+                | first
+                | .value.value) // empty' <<< "$outputs")"
             if [[ -z "$value" ]]; then
               echo "::error::Core deployment output $name is missing. Run the user-passthrough infrastructure workflow first."
               exit 1
@@ -99,7 +103,11 @@ jobs:
             --output json)"
 
           for name in resourceGroupName environmentName registryName registryLoginServer pullIdentityName; do
-            value="$(jq -r --arg name "$name" '.[$name].value' <<< "$outputs")"
+            value="$(jq -r --arg name "$name" \
+              '(to_entries
+                | map(select((.key | ascii_downcase) == ($name | ascii_downcase)))
+                | first
+                | .value.value) // empty' <<< "$outputs")"
             echo "${name}=$value" >> "$GITHUB_OUTPUT"
           done
 

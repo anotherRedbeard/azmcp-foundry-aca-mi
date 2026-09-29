@@ -170,7 +170,11 @@ jobs:
         shell: bash
         run: |
           value() {
-            jq -r --arg name "$1" '.[$name].value' <<< "$OUTPUTS"
+            jq -r --arg name "$1" \
+              '(to_entries
+                | map(select((.key | ascii_downcase) == ($name | ascii_downcase)))
+                | first
+                | .value.value) // empty' <<< "$OUTPUTS"
           }
 
           {

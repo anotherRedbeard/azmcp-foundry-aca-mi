@@ -137,11 +137,18 @@ RESOURCE_GROUP="rg-azmcp-passthrough-dev"
 DEPLOYMENT_NAME="user-passthrough-foundation"
 
 deployment_output() {
+  local name="${1:?Usage: deployment_output OUTPUT_NAME}"
+
   az deployment group show \
     --resource-group "$RESOURCE_GROUP" \
     --name "$DEPLOYMENT_NAME" \
-    --query "properties.outputs.$1.value" \
-    --output tsv
+    --query properties.outputs \
+    --output json |
+    jq -er --arg name "$name" \
+      'to_entries
+       | map(select((.key | ascii_downcase) == ($name | ascii_downcase)))
+       | first
+       | .value.value'
 }
 
 AZURE_TENANT_ID="$(deployment_output AZURE_TENANT_ID)"
