@@ -65,16 +65,18 @@ The prompt agent and its direct MCP tool are configured after infrastructure pro
 ```text
 managed-identity/
   README.md
-  azure.yaml
   infra/
   agent-web-app/
+  mcp-inspector-startup.sh
+  mcp-inspector-startup.ps1
   foundry-apim-mcp-managed-identity.excalidraw
 
 user-passthrough/
   README.md
-  azure.yaml
   infra/
   agent-web-app/
+  mcp-inspector-startup.sh
+  mcp-inspector-startup.ps1
   foundry-apim-mcp-user-passthrough.excalidraw
 
 web-host/
