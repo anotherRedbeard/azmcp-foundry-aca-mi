@@ -198,11 +198,13 @@ docker build .
 
 ## Deploy to Azure
 
-The repository's GitHub Actions workflow deploys this application and the
-managed-identity web application together to Azure Container Apps. Follow the
-[shared web-host deployment guide](../../web-host/README.md) to configure
-GitHub OIDC, environment variables and secrets, run the workflow, and register
-the deployed SPA redirect URI.
+Run **Deploy user-passthrough web app** after the user-passthrough core
+infrastructure workflow succeeds. The web workflow deploys only this application
+to its own Azure Container Apps environment and resource group.
+
+Follow the [web-host deployment guide](../../web-host/README.md) to configure
+GitHub OIDC, run the workflow, replace the placeholder APIM subscription key,
+and register the deployed SPA redirect URI.
 
 ## Troubleshooting
 
