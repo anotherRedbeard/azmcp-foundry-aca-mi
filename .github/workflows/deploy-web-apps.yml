@@ -56,9 +56,9 @@ jobs:
       - name: Sign in to Azure with OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Register required resource providers
         shell: bash
@@ -147,7 +147,7 @@ jobs:
             passthroughAppName="$PASSTHROUGH_APP_NAME"
             managedImage="$managed_image"
             passthroughImage="$passthrough_image"
-            entraTenantId="${{ vars.AZURE_TENANT_ID }}"
+            entraTenantId="${{ secrets.AZURE_TENANT_ID }}"
             managedSpaClientId="${{ vars.MANAGED_ENTRA_SPA_CLIENT_ID }}"
             managedApiScope="${{ vars.MANAGED_ENTRA_API_SCOPE }}"
             managedApimResponsesUrl="${{ vars.MANAGED_APIM_RESPONSES_URL }}"

@@ -183,15 +183,11 @@ docker build .
 
 ## Deploy to Azure
 
-The included Dockerfile can run on Azure Container Apps, App Service, or another container host.
-
-1. Configure the environment variables as application settings.
-2. Add the deployed HTTPS origin to the SPA registration's redirect URIs.
-3. Add that origin to the APIM CORS policy.
-4. Configure the health probe to call `/health`.
-5. Ensure the host can make outbound HTTPS calls to Microsoft Entra endpoints.
-
-The web host is stateless and can run with multiple replicas. For a non-container source deployment, run `npm run build` before `npm start`.
+The repository's GitHub Actions workflow deploys this application and the
+user-passthrough web application together to Azure Container Apps. Follow the
+[shared web-host deployment guide](../../web-host/README.md) to configure
+GitHub OIDC, environment variables and secrets, run the workflow, and register
+the deployed SPA redirect URI.
 
 ## Troubleshooting
 
