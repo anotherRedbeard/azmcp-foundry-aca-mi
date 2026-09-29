@@ -2,7 +2,8 @@
 
 This repository contains two independent implementations for connecting a Microsoft Foundry prompt agent to Azure MCP. Choose the identity model that matches your authorization requirements, then follow that variant's README.
 
-This root README is an overview only. Run deployment commands from the selected variant directory, not from the repository root.
+This root README is an overview only. Each variant has independent GitHub
+Actions workflows for its core infrastructure and optional web application.
 
 ## Choose a deployment
 
@@ -21,7 +22,7 @@ Quick links:
 
 - [Deploy the managed-identity variant](managed-identity/README.md)
 - [Deploy the user-passthrough/OBO variant](user-passthrough/README.md)
-- [Deploy both web applications with GitHub Actions](web-host/README.md)
+- [Configure the optional web application workflows](web-host/README.md)
 - [Configure MCP Inspector through managed-identity APIM](managed-identity/README.md#9-use-mcp-inspector-through-apim)
 
 ## Keep the variants isolated
@@ -37,12 +38,11 @@ Do not combine or share the variants':
 - Entra applications or OAuth connections
 - APIM policies or MCP servers
 - Foundry projects, agents, or MCP connections
-- `azd` environments or deployment outputs
+- Core infrastructure deployments or deployment outputs
 - Web application configuration
 
-The optional [dual web-host deployment](web-host/README.md) places only the two
-web front ends in one shared Container Apps environment. Their APIM, Foundry,
-MCP runtime, Entra configuration, and application settings remain separate.
+Each optional [web-host deployment](web-host/README.md) uses a separate resource
+group and reads configuration only from its matching core deployment.
 
 Pointing one variant at the other variant's MCP endpoint creates a hybrid identity flow and invalidates the authorization model.
 
@@ -82,7 +82,10 @@ web-host/
   infra/
 
 .github/workflows/
-  deploy-web-apps.yml
+  deploy-managed-identity-infra.yml
+  deploy-managed-identity-web.yml
+  deploy-user-passthrough-infra.yml
+  deploy-user-passthrough-web.yml
 ```
 
 Deployment and testing commands belong only in the corresponding variant README. Web-host implementation details belong in that variant's `agent-web-app/README.md`.

@@ -1,0 +1,177 @@
+name: Deploy managed-identity infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_environment:
+        description: GitHub Environment containing Azure deployment variables
+        required: true
+        default: managed-identity-infra-dev
+        type: string
+      azure_location:
+        description: Azure region
+        required: true
+        default: eastus2
+        type: string
+      resource_group:
+        description: Resource group for the managed-identity infrastructure
+        required: true
+        default: rg-azmcp-managed-dev
+        type: string
+      container_app_name:
+        description: Azure MCP Container App name
+        required: true
+        default: azure-mcp-storage-server-mi
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: managed-identity-infra-${{ inputs.github_environment }}
+  cancel-in-progress: false
+
+env:
+  AZURE_LOCATION: ${{ inputs.azure_location }}
+  RESOURCE_GROUP: ${{ inputs.resource_group }}
+  CONTAINER_APP_NAME: ${{ inputs.container_app_name }}
+  DEPLOYMENT_NAME: managed-identity-foundation
+
+jobs:
+  deploy:
+    name: Provision managed-identity foundation
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    timeout-minutes: 90
+    env:
+      APIM_PUBLISHER_NAME: ${{ vars.APIM_PUBLISHER_NAME }}
+      APIM_PUBLISHER_EMAIL: ${{ vars.APIM_PUBLISHER_EMAIL }}
+      SPA_CLIENT_ID: ${{ vars.SPA_CLIENT_ID }}
+      RESPONSES_API_CLIENT_ID: ${{ vars.RESPONSES_API_CLIENT_ID }}
+      WEB_APP_ORIGIN: ${{ vars.WEB_APP_ORIGIN || 'http://localhost:3000' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in \
+            APIM_PUBLISHER_NAME \
+            APIM_PUBLISHER_EMAIL \
+            SPA_CLIENT_ID \
+            RESPONSES_API_CLIENT_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::GitHub Environment variable $name is required."
+              exit 1
+            fi
+          done
+
+      - name: Register required resource providers
+        shell: bash
+        run: |
+          set -euo pipefail
+          for namespace in \
+            Microsoft.ApiManagement \
+            Microsoft.App \
+            Microsoft.CognitiveServices \
+            Microsoft.ContainerRegistry \
+            Microsoft.Insights \
+            Microsoft.ManagedIdentity \
+            Microsoft.OperationalInsights; do
+            az provider register --namespace "$namespace" --wait
+          done
+
+      - name: Create resource group
+        shell: bash
+        run: |
+          az group create \
+            --name "$RESOURCE_GROUP" \
+            --location "$AZURE_LOCATION" \
+            --output none
+
+      - name: Validate infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment group validate \
+            --name "${DEPLOYMENT_NAME}-validation" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file managed-identity/infra/main.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              acaName="$CONTAINER_APP_NAME" \
+              entraAppDisplayName="Azure MCP Managed Identity API" \
+              foundryProjectName="managed-identity" \
+              apimPublisherName="$APIM_PUBLISHER_NAME" \
+              apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
+              spaClientId="$SPA_CLIENT_ID" \
+              responsesApiClientId="$RESPONSES_API_CLIENT_ID" \
+              allowedWebOrigins="[\"$WEB_APP_ORIGIN\"]" \
+            --only-show-errors \
+            --output none
+
+      - name: Deploy infrastructure
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          outputs="$(az deployment group create \
+            --name "$DEPLOYMENT_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file managed-identity/infra/main.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              acaName="$CONTAINER_APP_NAME" \
+              entraAppDisplayName="Azure MCP Managed Identity API" \
+              foundryProjectName="managed-identity" \
+              apimPublisherName="$APIM_PUBLISHER_NAME" \
+              apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
+              spaClientId="$SPA_CLIENT_ID" \
+              responsesApiClientId="$RESPONSES_API_CLIENT_ID" \
+              allowedWebOrigins="[\"$WEB_APP_ORIGIN\"]" \
+            --only-show-errors \
+            --query properties.outputs \
+            --output json)"
+
+          {
+            echo "outputs<<EOF"
+            echo "$outputs"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish deployment summary
+        env:
+          OUTPUTS: ${{ steps.deploy.outputs.outputs }}
+        shell: bash
+        run: |
+          value() {
+            jq -r --arg name "$1" '.[$name].value' <<< "$OUTPUTS"
+          }
+
+          {
+            echo "## Managed-identity infrastructure"
+            echo
+            echo "| Output | Value |"
+            echo "| --- | --- |"
+            echo "| Resource group | \`$RESOURCE_GROUP\` |"
+            echo "| Stable deployment | \`$DEPLOYMENT_NAME\` |"
+            echo "| Container App | \`$(value CONTAINER_APP_NAME)\` |"
+            echo "| APIM gateway | $(value APIM_GATEWAY_URL) |"
+            echo "| Responses API | $(value RESPONSES_API_URL) |"
+            echo "| MCP API | $(value MCP_API_URL) |"
+            echo "| Foundry project | $(value AZURE_AI_PROJECT_ENDPOINT) |"
+            echo "| MCP application ID | \`$(value ENTRA_APP_CLIENT_ID)\` |"
+            echo
+            echo "Continue with the manual Foundry agent and MCP connection steps in \`managed-identity/README.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"

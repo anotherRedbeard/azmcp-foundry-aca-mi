@@ -1,16 +1,29 @@
 $ErrorActionPreference = "Stop"
 
-foreach ($Command in @("az", "azd", "npx")) {
+foreach ($Command in @("az", "npx")) {
     if (-not (Get-Command $Command -ErrorAction SilentlyContinue)) {
         throw "Required command not found: $Command"
     }
 }
 
-$TenantId = azd env get-value AZURE_TENANT_ID
-$McpIdentifierUri = azd env get-value ENTRA_APP_IDENTIFIER_URI
-$McpUrl = azd env get-value MCP_API_URL
-$McpServicePrincipalId = azd env get-value ENTRA_APP_SERVICE_PRINCIPAL_ID
-$InspectorRoleId = azd env get-value ENTRA_APP_INSPECTOR_ROLE_ID
+$ResourceGroup = if ($env:AZURE_RESOURCE_GROUP) { $env:AZURE_RESOURCE_GROUP } else { "rg-azmcp-managed-dev" }
+$DeploymentName = if ($env:AZURE_DEPLOYMENT_NAME) { $env:AZURE_DEPLOYMENT_NAME } else { "managed-identity-foundation" }
+
+function Get-DeploymentOutput {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    az deployment group show `
+        --resource-group $ResourceGroup `
+        --name $DeploymentName `
+        --query "properties.outputs.$Name.value" `
+        --output tsv
+}
+
+$TenantId = Get-DeploymentOutput "AZURE_TENANT_ID"
+$McpIdentifierUri = Get-DeploymentOutput "ENTRA_APP_IDENTIFIER_URI"
+$McpUrl = Get-DeploymentOutput "MCP_API_URL"
+$McpServicePrincipalId = Get-DeploymentOutput "ENTRA_APP_SERVICE_PRINCIPAL_ID"
+$InspectorRoleId = Get-DeploymentOutput "ENTRA_APP_INSPECTOR_ROLE_ID"
 $McpScope = "$McpIdentifierUri/Mcp.Tools.ReadWrite"
 $ServerUrl = "$($McpUrl.TrimEnd('/'))/"
 

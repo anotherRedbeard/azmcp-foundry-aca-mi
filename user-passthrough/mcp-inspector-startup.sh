@@ -1,19 +1,43 @@
-MCP_APP_ID="$(azd env get-value ENTRA_APP_CLIENT_ID)"
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+for command in az npx; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "Required command not found: $command" >&2
+    exit 1
+  fi
+done
+
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-rg-azmcp-passthrough-dev}"
+DEPLOYMENT_NAME="${AZURE_DEPLOYMENT_NAME:-user-passthrough-foundation}"
+
+deployment_output() {
+  az deployment group show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$DEPLOYMENT_NAME" \
+    --query "properties.outputs.$1.value" \
+    --output tsv
+}
+
+MCP_APP_ID="$(deployment_output ENTRA_APP_CLIENT_ID)"
 MCP_SCOPE="api://${MCP_APP_ID}/Mcp.Tools.ReadWrite"
-TENANT_ID="$(azd env get-value AZURE_TENANT_ID)"
+TENANT_ID="$(deployment_output AZURE_TENANT_ID)"
 
 az login \
   --tenant "$TENANT_ID" \
-  --scope "$MCP_SCOPE"
+  --scope "$MCP_SCOPE" \
+  --output none
 
 MCP_TOKEN="$(
   az account get-access-token \
+    --tenant "$TENANT_ID" \
     --scope "$MCP_SCOPE" \
     --query accessToken \
     --output tsv
 )"
 
-MCP_URL="$(azd env get-value CONTAINER_APP_URL)"
+MCP_URL="$(deployment_output CONTAINER_APP_URL)"
 
 npx -y @modelcontextprotocol/inspector@2.6.0 \
   --server-url "${MCP_URL%/}/" \

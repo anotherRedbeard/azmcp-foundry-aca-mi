@@ -167,6 +167,9 @@ output AZURE_TENANT_ID string = tenant().tenantId
 output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
 output AZURE_LOCATION string = location
+output SPA_CLIENT_ID string = spaClientId
+output API_CLIENT_ID string = apiClientId
+output FOUNDRY_API_SCOPE string = 'https://ai.azure.com/user_impersonation'
 
 output ENTRA_APP_CLIENT_ID string = entraApp.outputs.entraAppClientId
 output ENTRA_APP_OBJECT_ID string = entraApp.outputs.entraAppObjectId

@@ -1,12 +1,12 @@
 targetScope = 'subscription'
 
-@description('Azure region for the resource group and all web-host resources.')
+@description('Azure region for the resource group and web-host resources.')
 param location string = 'eastus2'
 
 @description('Naming prefix for the web-host resources.')
 param namingPrefix string = 'azmcp-webapps-dev'
 
-@description('Resource group for the shared web-host resources.')
+@description('Resource group for the web-host resources.')
 param resourceGroupName string = 'rg-${namingPrefix}'
 
 @description('Azure Container Apps environment name.')
@@ -26,7 +26,7 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   location: location
   tags: {
     product: 'azmcp'
-    purpose: 'dual-web-host'
+    purpose: 'web-host'
   }
 }
 

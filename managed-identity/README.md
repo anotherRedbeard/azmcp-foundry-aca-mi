@@ -2,7 +2,8 @@
 
 Use this variant when every user should receive the same Azure access. Azure RBAC is evaluated for the Azure MCP Container App's managed identity.
 
-Do not combine this deployment with files, resources, connections, or `azd` environments from [`../user-passthrough`](../user-passthrough/).
+Do not combine this deployment with files, resources, connections, or core
+deployment outputs from [`../user-passthrough`](../user-passthrough/).
 
 ## Architecture
 
@@ -21,19 +22,15 @@ The editable diagram is [`foundry-apim-mcp-managed-identity.excalidraw`](foundry
 ## Prerequisites
 
 - Azure subscription access to deploy resources and create role assignments
-- [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
 - Azure CLI
 - Node.js 20 or later
 - Permission to configure Entra application registrations
+- A GitHub Actions deployment application configured for OIDC
+- `Contributor` and `User Access Administrator` on the target subscription
+- Microsoft Graph application permissions required to create applications and service principals
 
-Sign in with accounts from the same tenant:
-
-```bash
-azd auth login
-az login
-azd auth login --check-status
-az account show --query "{user:user.name, tenantId:tenantId, subscription:id}"
-```
+See [`../web-host/README.md`](../web-host/README.md) for the GitHub OIDC
+federated-credential pattern.
 
 ## 1. Configure Entra applications
 
@@ -55,53 +52,20 @@ Create or reuse two single-tenant registrations.
 
 Record both application/client IDs.
 
-## 2. Configure the deployment
+## 2. Configure the infrastructure workflow
 
-Run all commands from this directory:
+Create the `managed-identity-infra-dev` GitHub Environment. Add these variables:
 
-```bash
-cd managed-identity
-azd show
-```
-
-`azd show` must report:
-
-```text
-azure-mcp-server-managed-identity
-```
-
-Create the local environment file:
-
-```bash
-cp azd.env.example azd.env
-```
-
-PowerShell:
-
-```powershell
-Copy-Item azd.env.example azd.env
-```
-
-Replace every placeholder in `azd.env`:
-
-```dotenv
-AZURE_LOCATION="eastus2"
-APIM_PUBLISHER_NAME="Contoso Publisher"
-APIM_PUBLISHER_EMAIL="admin@example.com"
-SPA_CLIENT_ID="<spa-client-id>"
-RESPONSES_API_CLIENT_ID="<responses-api-client-id>"
-WEB_APP_ORIGIN="http://localhost:3000"
-```
-
-Do not commit `azd.env`.
-
-Create the `azd` environment and import the values:
-
-```bash
-azd env new managed-identity-dev
-azd env set --file azd.env
-azd env get-values
-```
+| Variable | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | GitHub deployment application client ID |
+| `AZURE_TENANT_ID` | Azure tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Target subscription ID |
+| `APIM_PUBLISHER_NAME` | APIM publisher name |
+| `APIM_PUBLISHER_EMAIL` | APIM publisher email |
+| `SPA_CLIENT_ID` | SPA application client ID |
+| `RESPONSES_API_CLIENT_ID` | Protected Responses API client ID |
+| `WEB_APP_ORIGIN` | Initial allowed origin, normally `http://localhost:3000` |
 
 ## 3. Set the Foundry agent name
 
@@ -115,32 +79,37 @@ The default name is `MyMCPAgentDemo`. Either use that name when creating the age
 
 ## 4. Deploy
 
-```bash
-azd up
-```
+Run **Deploy managed-identity infrastructure** from the repository's
+**Actions** page.
 
-After deployment, inspect the outputs:
-
-```bash
-azd env get-values
-```
-
-The most important outputs are:
+The default stable deployment is:
 
 ```text
-APIM_GATEWAY_URL
-APIM_TEST_SUBSCRIPTION_ID
-RESPONSES_API_URL
-MCP_API_URL
-AZURE_AI_PROJECT_ID
-AZURE_AI_PROJECT_ENDPOINT
-AZURE_AI_GPT5_DEPLOYMENT_NAME
-AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME
-ENTRA_APP_IDENTIFIER_URI
-ENTRA_APP_INSPECTOR_ROLE_ID
-ENTRA_APP_SERVICE_PRINCIPAL_ID
-CONTAINER_APP_NAME
-APPLICATION_INSIGHTS_NAME
+Resource group: rg-azmcp-managed-dev
+Deployment: managed-identity-foundation
+```
+
+The workflow summary publishes the main endpoints and identifiers. To load
+outputs for the manual commands below:
+
+```bash
+RESOURCE_GROUP="rg-azmcp-managed-dev"
+DEPLOYMENT_NAME="managed-identity-foundation"
+
+deployment_output() {
+  az deployment group show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$DEPLOYMENT_NAME" \
+    --query "properties.outputs.$1.value" \
+    --output tsv
+}
+
+AZURE_AI_PROJECT_ID="$(deployment_output AZURE_AI_PROJECT_ID)"
+AZURE_AI_PROJECT_ENDPOINT="$(deployment_output AZURE_AI_PROJECT_ENDPOINT)"
+AZURE_AI_GPT5_DEPLOYMENT_NAME="$(deployment_output AZURE_AI_GPT5_DEPLOYMENT_NAME)"
+AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME="$(deployment_output AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME)"
+MCP_API_URL="$(deployment_output MCP_API_URL)"
+CONTAINER_APP_NAME="$(deployment_output CONTAINER_APP_NAME)"
 ```
 
 ## 5. Create the Foundry agent
@@ -151,7 +120,7 @@ Before creating the agent, grant your signed-in user the **Foundry User** role o
 az role assignment create \
   --assignee "$(az ad signed-in-user show --query id --output tsv)" \
   --role "Foundry User" \
-  --scope "$(azd env get-value AZURE_AI_PROJECT_ID)"
+  --scope "$AZURE_AI_PROJECT_ID"
 ```
 
 Allow about five minutes for the role assignment to propagate before creating the agent. If Foundry still reports an authorization error, wait a few more minutes and retry.
@@ -177,7 +146,7 @@ Then, in the deployed Foundry project:
 6. Set `require_approval` to `always` so the sample web application prompts before MCP tool execution.
 7. Save the connection and attach it directly to the agent.
 
-Use `MCP_API_URL`, not `CONTAINER_APP_URL`.
+Use `$MCP_API_URL`, not the Container App URL.
 
 ## 7. Test the agent
 
@@ -190,9 +159,10 @@ Return the resource group name and location.
 
 Approve the MCP tool call when prompted. Results are limited by the Container App managed identity's Azure RBAC assignments.
 
-## 8. Run the web application
+## 8. Run or deploy the web application
 
-Retrieve the APIM test subscription key through an authorized workflow and store it only in the web application's `.env` file.
+For local development, retrieve the APIM test subscription key and store it
+only in the web application's `.env` file.
 
 ```bash
 cd agent-web-app
@@ -203,14 +173,18 @@ npm run dev
 
 Open <http://localhost:3000>. See [`agent-web-app/README.md`](agent-web-app/README.md) for its required settings.
 
+To deploy the optional hosted application, run **Deploy managed-identity web
+app**. Follow [`../web-host/README.md`](../web-host/README.md) to replace the
+placeholder APIM key and add the deployed SPA redirect URI.
+
 ## 9. Use MCP Inspector through APIM
 
 To use MCP Inspector through APIM, first assign your user the **Azure MCP Inspector Access** role on the MCP enterprise application:
 
 ```bash
 USER_OBJECT_ID="$(az ad signed-in-user show --query id --output tsv)"
-MCP_SERVICE_PRINCIPAL_ID="$(azd env get-value ENTRA_APP_SERVICE_PRINCIPAL_ID)"
-INSPECTOR_ROLE_ID="$(azd env get-value ENTRA_APP_INSPECTOR_ROLE_ID)"
+MCP_SERVICE_PRINCIPAL_ID="$(deployment_output ENTRA_APP_SERVICE_PRINCIPAL_ID)"
+INSPECTOR_ROLE_ID="$(deployment_output ENTRA_APP_INSPECTOR_ROLE_ID)"
 
 az rest \
   --method post \
@@ -246,8 +220,8 @@ Inspect Container App logs:
 
 ```bash
 az containerapp logs show \
-  --name "$(azd env get-value CONTAINER_APP_NAME)" \
-  --resource-group <resource-group> \
+  --name "$CONTAINER_APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
   --follow
 ```
 
@@ -264,6 +238,5 @@ Application Insights should contain `POST` and `GET` requests for `/mcp/managed-
 
 ## Clean up
 
-```bash
-azd down
-```
+Delete `rg-azmcp-managed-web-dev` first if the optional web application was
+deployed, then delete `rg-azmcp-managed-dev`.

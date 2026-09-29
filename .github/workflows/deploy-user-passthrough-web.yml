@@ -1,0 +1,171 @@
+name: Deploy user-passthrough web app
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_environment:
+        description: GitHub Environment containing Azure deployment variables
+        required: true
+        default: user-passthrough-web-dev
+        type: string
+      azure_location:
+        description: Azure region for the web application
+        required: true
+        default: eastus2
+        type: string
+      core_resource_group:
+        description: Resource group containing the user-passthrough foundation deployment
+        required: true
+        default: rg-azmcp-passthrough-dev
+        type: string
+      naming_prefix:
+        description: Naming prefix for the web-host resources
+        required: true
+        default: azmcp-passthrough-web-dev
+        type: string
+      app_name:
+        description: Web Container App name
+        required: true
+        default: ca-azmcp-user-passthrough
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: user-passthrough-web-${{ inputs.github_environment }}
+  cancel-in-progress: false
+
+env:
+  AZURE_LOCATION: ${{ inputs.azure_location }}
+  CORE_RESOURCE_GROUP: ${{ inputs.core_resource_group }}
+  CORE_DEPLOYMENT_NAME: user-passthrough-foundation
+  NAMING_PREFIX: ${{ inputs.naming_prefix }}
+  APP_NAME: ${{ inputs.app_name }}
+
+jobs:
+  deploy:
+    name: Build and deploy user-passthrough web app
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Read user-passthrough foundation outputs
+        id: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          outputs="$(az deployment group show \
+            --resource-group "$CORE_RESOURCE_GROUP" \
+            --name "$CORE_DEPLOYMENT_NAME" \
+            --query properties.outputs \
+            --output json)"
+
+          for name in AZURE_TENANT_ID SPA_CLIENT_ID FOUNDRY_API_SCOPE RESPONSES_API_URL; do
+            value="$(jq -r --arg name "$name" '.[$name].value // empty' <<< "$outputs")"
+            if [[ -z "$value" ]]; then
+              echo "::error::Core deployment output $name is missing. Run the user-passthrough infrastructure workflow first."
+              exit 1
+            fi
+            echo "${name,,}=$value" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Deploy web-host foundation
+        id: foundation
+        shell: bash
+        run: |
+          set -euo pipefail
+          outputs="$(az deployment sub create \
+            --name "passthrough-web-foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --location "$AZURE_LOCATION" \
+            --template-file web-host/infra/foundation.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              namingPrefix="$NAMING_PREFIX" \
+            --only-show-errors \
+            --query properties.outputs \
+            --output json)"
+
+          for name in resourceGroupName environmentName registryName registryLoginServer pullIdentityName; do
+            value="$(jq -r --arg name "$name" '.[$name].value' <<< "$outputs")"
+            echo "${name}=$value" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Build image in ACR
+        shell: bash
+        run: |
+          az acr build \
+            --registry "${{ steps.foundation.outputs.registryName }}" \
+            --image "user-passthrough:${GITHUB_SHA}" \
+            --file user-passthrough/agent-web-app/Dockerfile \
+            user-passthrough/agent-web-app \
+            --only-show-errors
+
+      - name: Deploy web application
+        id: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ steps.foundation.outputs.registryLoginServer }}/user-passthrough:${GITHUB_SHA}"
+          outputs="$(az deployment group create \
+            --name "user-passthrough-web" \
+            --resource-group "${{ steps.foundation.outputs.resourceGroupName }}" \
+            --template-file web-host/infra/user-passthrough-app.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              environmentName="${{ steps.foundation.outputs.environmentName }}" \
+              registryName="${{ steps.foundation.outputs.registryName }}" \
+              pullIdentityName="${{ steps.foundation.outputs.pullIdentityName }}" \
+              appName="$APP_NAME" \
+              image="$image" \
+              entraTenantId="${{ steps.core.outputs.azure_tenant_id }}" \
+              spaClientId="${{ steps.core.outputs.spa_client_id }}" \
+              foundryApiScope="${{ steps.core.outputs.foundry_api_scope }}" \
+              apimResponsesUrl="${{ steps.core.outputs.responses_api_url }}" \
+              apimSubscriptionKey="replace-before-use" \
+            --only-show-errors \
+            --query properties.outputs \
+            --output json)"
+
+          echo "url=$(jq -r '.appUrl.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify application health
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error --max-time 15 "${{ steps.app.outputs.url }}/health" >/dev/null; then
+              exit 0
+            fi
+            echo "Waiting for the web application (attempt $attempt of 20)..."
+            sleep 15
+          done
+          echo "::error::The user-passthrough web application did not become healthy."
+          exit 1
+
+      - name: Publish deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## User-passthrough web application"
+            echo
+            echo "- URL: ${{ steps.app.outputs.url }}"
+            echo "- Resource group: \`${{ steps.foundation.outputs.resourceGroupName }}\`"
+            echo "- Container App: \`$APP_NAME\`"
+            echo
+            echo "> The APIM subscription key is currently the placeholder \`replace-before-use\`. Replace the \`apim-subscription-key\` Container App secret before testing agent requests."
+            echo
+            echo "Add ${{ steps.app.outputs.url }} as a SPA redirect URI."
+          } >> "$GITHUB_STEP_SUMMARY"

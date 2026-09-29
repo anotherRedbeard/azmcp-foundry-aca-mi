@@ -187,6 +187,9 @@ output AZURE_TENANT_ID string = tenant().tenantId
 output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
 output AZURE_RESOURCE_GROUP string = resourceGroup().name
 output AZURE_LOCATION string = location
+output SPA_CLIENT_ID string = spaClientId
+output RESPONSES_API_CLIENT_ID string = responsesApiClientId
+output ENTRA_API_SCOPE string = 'api://${responsesApiClientId}/access_as_user'
 
 output ENTRA_APP_CLIENT_ID string = entraApp.outputs.entraAppClientId
 output ENTRA_APP_OBJECT_ID string = entraApp.outputs.entraAppObjectId

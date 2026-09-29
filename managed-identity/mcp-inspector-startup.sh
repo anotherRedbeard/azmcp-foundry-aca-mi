@@ -2,18 +2,29 @@
 
 set -euo pipefail
 
-for command in az azd npx; do
+for command in az npx; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Required command not found: $command" >&2
     exit 1
   fi
 done
 
-TENANT_ID="$(azd env get-value AZURE_TENANT_ID)"
-MCP_IDENTIFIER_URI="$(azd env get-value ENTRA_APP_IDENTIFIER_URI)"
-MCP_URL="$(azd env get-value MCP_API_URL)"
-MCP_SERVICE_PRINCIPAL_ID="$(azd env get-value ENTRA_APP_SERVICE_PRINCIPAL_ID)"
-INSPECTOR_ROLE_ID="$(azd env get-value ENTRA_APP_INSPECTOR_ROLE_ID)"
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-rg-azmcp-managed-dev}"
+DEPLOYMENT_NAME="${AZURE_DEPLOYMENT_NAME:-managed-identity-foundation}"
+
+deployment_output() {
+  az deployment group show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$DEPLOYMENT_NAME" \
+    --query "properties.outputs.$1.value" \
+    --output tsv
+}
+
+TENANT_ID="$(deployment_output AZURE_TENANT_ID)"
+MCP_IDENTIFIER_URI="$(deployment_output ENTRA_APP_IDENTIFIER_URI)"
+MCP_URL="$(deployment_output MCP_API_URL)"
+MCP_SERVICE_PRINCIPAL_ID="$(deployment_output ENTRA_APP_SERVICE_PRINCIPAL_ID)"
+INSPECTOR_ROLE_ID="$(deployment_output ENTRA_APP_INSPECTOR_ROLE_ID)"
 MCP_SCOPE="${MCP_IDENTIFIER_URI}/Mcp.Tools.ReadWrite"
 
 USER_OBJECT_ID="$(az ad signed-in-user show --query id --output tsv)"

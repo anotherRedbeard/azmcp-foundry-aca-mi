@@ -1,85 +1,109 @@
-# Deploy Both Web Applications
+# Deploy Optional Web Applications
 
-This manual GitHub Actions workflow creates a shared Azure Container Apps
-environment and deploys both web front ends. It reuses your existing APIM,
-Foundry, MCP, and Entra resources. It does not use `azd`.
+The managed-identity and user-passthrough web applications are deployed
+independently. Each workflow creates a dedicated resource group, Azure
+Container Registry, Container Apps environment, and web Container App.
 
-## Prerequisites
+Run the matching core infrastructure workflow before its web workflow:
 
-- An Entra application for GitHub Actions
-- `Contributor` and `User Access Administrator` on the target subscription
-- Existing managed-identity and user-passthrough deployments
+| Identity model | Core workflow | Optional web workflow |
+| --- | --- | --- |
+| Managed identity | **Deploy managed-identity infrastructure** | **Deploy managed-identity web app** |
+| User passthrough | **Deploy user-passthrough infrastructure** | **Deploy user-passthrough web app** |
 
-## 1. Configure GitHub OIDC
+## GitHub OIDC
 
-On the Entra application used by GitHub Actions, add a federated credential for
-a GitHub Actions deployment environment:
+Create an Entra application for GitHub Actions and add one federated credential
+for each GitHub Environment used by the workflows:
 
 | Setting | Value |
 | --- | --- |
 | Organization | `<github-owner>` |
 | Repository | `<github-repository>` |
 | Entity type | Environment |
-| Environment | `<github-environment>` |
-| Credential name | Any descriptive name |
+| Environment | Exact GitHub Environment name |
 
-The environment value must exactly match the GitHub Environment selected when
-the workflow runs.
+The deployment identity needs `Contributor` on the target subscription. The
+managed-identity core workflow and both web workflows create role assignments
+and therefore also need `User Access Administrator`.
 
-## 2. Configure the GitHub Environment
+The core workflows create Entra applications through the Microsoft Graph Bicep
+extension. Grant the deployment identity the tenant-level Microsoft Graph
+application permissions required to create applications, service principals,
+and federated credentials.
 
-Create the GitHub Environment and add these variables:
+## GitHub Environments
+
+Create these environments:
+
+```text
+managed-identity-infra-dev
+managed-identity-web-dev
+user-passthrough-infra-dev
+user-passthrough-web-dev
+```
+
+Add these variables to every environment:
 
 | Variable | Value |
 | --- | --- |
-| `AZURE_CLIENT_ID` | `<github-deployment-client-id>` |
-| `AZURE_TENANT_ID` | `<azure-tenant-id>` |
-| `AZURE_SUBSCRIPTION_ID` | `<azure-subscription-id>` |
-| `MANAGED_ENTRA_SPA_CLIENT_ID` | `<managed-spa-client-id>` |
-| `MANAGED_ENTRA_API_SCOPE` | `api://<managed-responses-api-client-id>/access_as_user` |
-| `MANAGED_APIM_RESPONSES_URL` | `https://<managed-apim-name>.azure-api.net/agent/responses` |
-| `PASSTHROUGH_ENTRA_SPA_CLIENT_ID` | `<passthrough-spa-client-id>` |
-| `PASSTHROUGH_FOUNDRY_API_SCOPE` | `https://ai.azure.com/user_impersonation` |
-| `PASSTHROUGH_APIM_RESPONSES_URL` | `https://<passthrough-apim-name>.azure-api.net/agent/responses` |
+| `AZURE_CLIENT_ID` | GitHub deployment application client ID |
+| `AZURE_TENANT_ID` | Azure tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Target Azure subscription ID |
 
-Add these environment secrets:
+The web environments need no application-specific variables. They read the
+tenant ID, SPA client ID, API scope, and APIM Responses URL from the stable core
+deployment.
 
-| Secret | Value |
-| --- | --- |
-| `MANAGED_APIM_SUBSCRIPTION_KEY` | Managed-identity APIM subscription key |
-| `PASSTHROUGH_APIM_SUBSCRIPTION_KEY` | User-passthrough APIM subscription key |
+## Deploy a web application
 
-## 3. Deploy
+Run the matching web workflow from the repository's **Actions** page. Its
+default core resource group must match the resource group selected when the
+core workflow ran.
 
-Run **Deploy dual web apps** from the repository's **Actions** page.
+Each web workflow:
 
-The workflow inputs allow you to select:
+1. Reads the matching stable core deployment outputs.
+2. Creates a dedicated web-host resource group.
+3. Builds one application image in ACR.
+4. Deploys one Azure Container App.
+5. Checks `/health`.
+6. Publishes the application URL in the workflow summary.
 
-- GitHub Environment
-- Azure region
-- Resource naming prefix
-- Managed-identity Container App name
-- User-passthrough Container App name
+Default web resource groups:
 
-The workflow validates the Bicep templates, builds both images in ACR, deploys
-both Container Apps, verifies their health endpoints, and publishes both URLs
-in the run summary.
+```text
+rg-azmcp-managed-web-dev
+rg-azmcp-passthrough-web-dev
+```
 
-## 4. Configure SPA redirects
+## Configure the APIM subscription key
 
-Copy both Container App URLs from the workflow summary. Add each URL under
-**Authentication > Single-page application** on its matching SPA registration:
+The web workflows intentionally deploy this placeholder:
 
-- Managed URL → managed-identity SPA
-- User-passthrough URL → user-passthrough SPA
+```text
+replace-before-use
+```
+
+After deployment, open the web Container App in the Azure portal:
+
+1. Open **Settings > Secrets**.
+2. Replace the value of `apim-subscription-key` with the matching APIM
+   subscription key.
+3. Create or restart the active revision so the application reads the new
+   secret.
+
+The web applications remain healthy with the placeholder, but agent requests
+will receive an APIM authorization error until it is replaced.
+
+## Configure the SPA redirect
+
+Copy the application URL from the workflow summary. On the matching SPA
+registration, add it under **Authentication > Single-page application**.
+
+Do not add one variant's URL to the other variant's SPA registration.
 
 ## Cleanup
 
-Delete the resource group created by the workflow. With the default naming
-prefix, its name is:
-
-```text
-rg-azmcp-webapps-dev
-```
-
-This deletes only the shared web-host resources.
+Delete only the selected web resource group. This does not remove the
+corresponding Foundry, APIM, MCP, or Entra resources.
