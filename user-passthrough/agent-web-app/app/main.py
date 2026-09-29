@@ -25,7 +25,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        transport = httpx.AsyncHTTPTransport(retries=1)
+        async with httpx.AsyncClient(
+            timeout=120.0,
+            transport=transport,
+        ) as client:
             app.state.http_client = client
             yield
 
@@ -121,7 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 json=request_body,
             )
         except httpx.RequestError as error:
-            logger.error("APIM request failed: %s", type(error).__name__)
+            logger.exception("APIM request failed")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="The upstream APIM request could not be completed.",
