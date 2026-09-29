@@ -27,6 +27,12 @@ The deployment identity needs `Contributor` on the target subscription. The
 managed-identity core workflow and both web workflows create role assignments
 and therefore also need `User Access Administrator`.
 
+If `User Access Administrator` has an ABAC condition, that condition must allow
+the role definitions deployed by the selected workflow. The managed-identity
+infrastructure workflow requires permission to assign both `Reader`
+(`acdd72a7-3385-48ef-bd42-f606fba81ae7`) and `Foundry User`
+(`53ca6127-db72-4b80-b1b0-d745d6d5456d`).
+
 The workflows do not create or modify Entra applications. Create the
 variant-specific app registrations manually by following the selected
 variant's README before running its infrastructure workflow.
