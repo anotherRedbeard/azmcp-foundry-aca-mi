@@ -42,9 +42,9 @@ user-passthrough-infra-dev
 user-passthrough-web-dev
 ```
 
-Add these variables to every environment:
+Add these secrets to every environment:
 
-| Variable | Value |
+| Secret | Value |
 | --- | --- |
 | `AZURE_CLIENT_ID` | GitHub deployment application client ID |
 | `AZURE_TENANT_ID` | Azure tenant ID |

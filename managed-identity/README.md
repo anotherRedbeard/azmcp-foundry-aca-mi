@@ -74,13 +74,18 @@ Record:
 
 ## 2. Configure the infrastructure workflow
 
-Create the `managed-identity-infra-dev` GitHub Environment. Add these variables:
+Create the `managed-identity-infra-dev` GitHub Environment. Add these secrets:
 
-| Variable | Value |
+| Secret | Value |
 | --- | --- |
 | `AZURE_CLIENT_ID` | GitHub deployment application client ID |
 | `AZURE_TENANT_ID` | Azure tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | Target subscription ID |
+
+Add these variables:
+
+| Variable | Value |
+| --- | --- |
 | `APIM_PUBLISHER_NAME` | APIM publisher name |
 | `APIM_PUBLISHER_EMAIL` | APIM publisher email |
 | `SPA_CLIENT_ID` | SPA application client ID |
