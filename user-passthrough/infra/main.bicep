@@ -37,9 +37,6 @@ param spaClientId string = ''
 @description('Confidential API client ID used by the Foundry OAuth2 MCP connection')
 param apiClientId string = ''
 
-@description('Allowed web application origins for Responses API CORS')
-param allowedWebOrigins array = []
-
 @description('gpt-5 deployment name')
 param gpt5DeploymentName string = 'gpt-5'
 
@@ -152,7 +149,6 @@ module apim 'modules/apim.bicep' = {
     tenantId: tenant().tenantId
     spaClientId: spaClientId
     apiClientId: apiClientId
-    allowedWebOrigins: allowedWebOrigins
     foundryResponsesUrl: '${foundry.outputs.projectEndpoint}/openai/v1'
     mcpBackendUrl: acaInfrastructure.outputs.containerAppUrl
     mcpClientId: mcpAppClientId

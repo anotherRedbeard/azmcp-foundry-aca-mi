@@ -102,7 +102,6 @@ Add these variables:
 | `MCP_APP_SERVICE_PRINCIPAL_ID` | MCP enterprise application object ID |
 | `MCP_APP_IDENTIFIER_URI` | MCP Application ID URI |
 | `MCP_APP_SCOPE_ID` | `Mcp.Tools.ReadWrite` delegated scope ID |
-| `WEB_APP_ORIGIN` | Initial allowed origin, normally `http://localhost:3000` |
 
 Do not add the confidential client's secret to GitHub. It is entered only when
 the Foundry OAuth connection is created manually.

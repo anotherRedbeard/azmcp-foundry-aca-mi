@@ -19,9 +19,6 @@ param spaClientId string
 @description('Confidential OAuth client ID used by the Foundry MCP connection')
 param apiClientId string
 
-@description('Allowed browser origins')
-param allowedWebOrigins array
-
 @description('Foundry Responses backend URL')
 param foundryResponsesUrl string
 
@@ -42,21 +39,11 @@ assert publisherNameIsRequired = !empty(trim(publisherName))
 assert publisherEmailIsRequired = !empty(trim(publisherEmail)) && contains(publisherEmail, '@')
 assert spaClientIdIsRequired = !empty(trim(spaClientId))
 assert apiClientIdIsRequired = !empty(trim(apiClientId))
-assert webOriginsAreRequired = length(allowedWebOrigins) > 0 && !contains(allowedWebOrigins, '')
 assert mcpClientIdIsRequired = !empty(trim(mcpClientId))
-
-var allowedOriginElements = [
-  for origin in allowedWebOrigins: '<origin>${trim(string(origin))}</origin>'
-]
-var allowedOriginsXml = join(allowedOriginElements, '')
 
 var responsesPolicy = replace(
   replace(
-    replace(
-      loadTextContent('policies/responses.xml'),
-      '__ALLOWED_ORIGINS__',
-      allowedOriginsXml
-    ),
+    loadTextContent('policies/responses.xml'),
     '__TENANT_ID__',
     tenantId
   ),

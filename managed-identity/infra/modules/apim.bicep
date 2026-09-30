@@ -19,9 +19,6 @@ param spaClientId string
 @description('Protected Responses API application client ID')
 param responsesApiClientId string
 
-@description('Allowed browser origins')
-param allowedWebOrigins array
-
 @description('Foundry Responses backend URL')
 param foundryResponsesUrl string
 
@@ -45,23 +42,13 @@ assert publisherNameIsRequired = !empty(trim(publisherName))
 assert publisherEmailIsRequired = !empty(trim(publisherEmail)) && contains(publisherEmail, '@')
 assert spaClientIdIsRequired = !empty(trim(spaClientId))
 assert responsesApiClientIdIsRequired = !empty(trim(responsesApiClientId))
-assert webOriginsAreRequired = length(allowedWebOrigins) > 0 && !contains(allowedWebOrigins, '')
 assert mcpClientIdIsRequired = !empty(trim(mcpClientId))
 assert projectPrincipalIdIsRequired = !empty(trim(foundryProjectPrincipalId))
-
-var allowedOriginElements = [
-  for origin in allowedWebOrigins: '<origin>${trim(string(origin))}</origin>'
-]
-var allowedOriginsXml = join(allowedOriginElements, '')
 
 var responsesPolicy = replace(
   replace(
     replace(
-      replace(
-        loadTextContent('policies/responses.xml'),
-        '__ALLOWED_ORIGINS__',
-        allowedOriginsXml
-      ),
+      loadTextContent('policies/responses.xml'),
       '__TENANT_ID__',
       tenantId
     ),

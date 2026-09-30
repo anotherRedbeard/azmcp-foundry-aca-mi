@@ -95,7 +95,6 @@ Add these variables:
 | `MCP_APP_IDENTIFIER_URI` | MCP Application ID URI |
 | `MCP_TOOLS_APP_ROLE_ID` | `Mcp.Tools.ReadWrite.All` application role ID |
 | `MCP_INSPECTOR_APP_ROLE_ID` | `Mcp.Inspector.Access` application role ID |
-| `WEB_APP_ORIGIN` | Initial allowed origin, normally `http://localhost:3000` |
 
 ## 3. Set the Foundry agent name
 

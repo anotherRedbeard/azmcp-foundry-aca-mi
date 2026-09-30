@@ -54,7 +54,6 @@ jobs:
       MCP_APP_IDENTIFIER_URI: ${{ vars.MCP_APP_IDENTIFIER_URI }}
       MCP_TOOLS_APP_ROLE_ID: ${{ vars.MCP_TOOLS_APP_ROLE_ID }}
       MCP_INSPECTOR_APP_ROLE_ID: ${{ vars.MCP_INSPECTOR_APP_ROLE_ID }}
-      WEB_APP_ORIGIN: ${{ vars.WEB_APP_ORIGIN || 'http://localhost:3000' }}
 
     steps:
       - name: Check out repository
@@ -131,7 +130,6 @@ jobs:
               apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
               spaClientId="$SPA_CLIENT_ID" \
               responsesApiClientId="$RESPONSES_API_CLIENT_ID" \
-              allowedWebOrigins="[\"$WEB_APP_ORIGIN\"]" \
             --only-show-errors \
             --output none
 
@@ -157,7 +155,6 @@ jobs:
               apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
               spaClientId="$SPA_CLIENT_ID" \
               responsesApiClientId="$RESPONSES_API_CLIENT_ID" \
-              allowedWebOrigins="[\"$WEB_APP_ORIGIN\"]" \
             --only-show-errors \
             --query properties.outputs \
             --output json)"

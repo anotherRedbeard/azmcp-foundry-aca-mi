@@ -1,18 +1,6 @@
 <policies>
   <inbound>
     <base />
-    <cors allow-credentials="false">
-      <allowed-origins>__ALLOWED_ORIGINS__</allowed-origins>
-      <allowed-methods>
-        <method>POST</method>
-        <method>OPTIONS</method>
-      </allowed-methods>
-      <allowed-headers>
-        <header>authorization</header>
-        <header>content-type</header>
-        <header>ocp-apim-subscription-key</header>
-      </allowed-headers>
-    </cors>
     <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Invalid Foundry delegated token" require-expiration-time="true" require-scheme="Bearer">
       <openid-config url="https://login.microsoftonline.com/__TENANT_ID__/.well-known/openid-configuration" />
       <audiences>
