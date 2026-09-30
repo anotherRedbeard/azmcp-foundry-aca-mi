@@ -266,58 +266,10 @@ The user needs:
 
 ## 9. Run or deploy the web application
 
-Retrieve the APIM test subscription key through an authorized workflow and store it only in the web application's `.env` file.
-
-macOS and Linux:
-
-```bash
-cd agent-web-app
-cp .env.example .env
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-npm ci
-npm run build
-python -m app.main
-```
-
-If `python3` resolves to the removed root-level `agent-web-app/.venv`, reset the old environment before creating this one:
-
-```bash
-deactivate 2>/dev/null || true
-unset VIRTUAL_ENV
-hash -r
-```
-
-PowerShell:
-
-```powershell
-cd agent-web-app
-Copy-Item .env.example .env
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-npm ci
-npm run build
-python -m app.main
-```
-
-Open <http://localhost:3000>. See [`agent-web-app/README.md`](agent-web-app/README.md) for its required settings.
-
-To deploy the optional hosted application, run **Deploy user-passthrough web
-app**. Follow [`../web-host/README.md`](../web-host/README.md) to replace the
-placeholder APIM key and add the deployed SPA redirect URI.
+Continue with the [`agent-web-app` guide](agent-web-app/README.md). It covers
+the required configuration, local run, validation, and Azure deployment.
 
 ## Verify and troubleshoot
-
-Validate the web application:
-
-```bash
-cd agent-web-app
-npm run check
-python -m compileall app
-docker build .
-```
 
 Inspect Container App logs:
 

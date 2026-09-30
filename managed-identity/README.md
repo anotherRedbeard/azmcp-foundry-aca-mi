@@ -231,21 +231,8 @@ Approve the MCP tool call when prompted. Results are limited by the Container Ap
 
 ## 9. Run or deploy the web application
 
-For local development, retrieve the APIM test subscription key and store it
-only in the web application's `.env` file.
-
-```bash
-cd agent-web-app
-cp .env.example .env
-npm install
-npm run dev
-```
-
-Open <http://localhost:3000>. See [`agent-web-app/README.md`](agent-web-app/README.md) for its required settings.
-
-To deploy the optional hosted application, run **Deploy managed-identity web
-app**. Follow [`../web-host/README.md`](../web-host/README.md) to replace the
-placeholder APIM key and add the deployed SPA redirect URI.
+Continue with the [`agent-web-app` guide](agent-web-app/README.md). It covers
+the required configuration, local run, validation, and Azure deployment.
 
 ## 10. Use MCP Inspector through APIM
 
@@ -277,14 +264,6 @@ PowerShell:
 The scripts connect to `MCP_API_URL` using your delegated `Mcp.Tools.ReadWrite` token. APIM permits either the Foundry project managed identity or a user assigned the `Mcp.Inspector.Access` role, then authenticates to the managed-identity MCP backend.
 
 ## Verify and troubleshoot
-
-Validate the web application:
-
-```bash
-cd agent-web-app
-npm run check
-docker build .
-```
 
 Inspect Container App logs:
 
