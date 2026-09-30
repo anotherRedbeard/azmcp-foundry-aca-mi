@@ -242,13 +242,17 @@ the target subscription.
 
 1. Run **Deploy user-passthrough web app** from the repository's **Actions**
    page.
-2. Copy the application URL from the workflow summary.
-3. In the deployed Container App, replace the `apim-subscription-key` secret's
-   `replace-before-use` value with the APIM test subscription key, then restart
-   or create a revision.
-4. Add the application URL to the SPA registration under **Authentication >
+2. Copy the resource group, Container App name, and application URL from the
+   workflow summary.
+3. In the Azure portal, open the deployed Container App.
+4. Open **Security > Secrets** and select `apim-subscription-key`.
+5. Replace `replace-before-use` with the APIM test subscription's primary key,
+   then save the secret.
+6. Open **Application > Revisions and replicas**, select the active revision,
+   and restart it so the application loads the new secret value.
+7. Add the application URL to the SPA registration under **Authentication >
    Single-page application**.
-5. Open the application URL and sign in.
+8. Open the application URL and sign in.
 
 The web workflow deploys only this application to its own Azure Container Apps
 environment and resource group.
