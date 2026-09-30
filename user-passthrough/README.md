@@ -162,18 +162,13 @@ CONTAINER_APP_NAME="$(deployment_output CONTAINER_APP_NAME)"
 OBO_MANAGED_IDENTITY_PRINCIPAL_ID="$(deployment_output CONTAINER_APP_PRINCIPAL_ID)"
 ```
 
-The manually created MCP application must contain these downstream delegated
-permissions:
+If you completed step 1, no additional API permission change is required here.
+Before continuing, verify that the MCP protected API registration still shows
+these delegated permissions with tenant-wide admin consent granted:
 
-- Azure Resource Manager `user_impersonation`
+- Azure Service Management `user_impersonation`
 - Azure Storage `user_impersonation`
 - Azure Resource Manager MCP `MCP.Access`
-
-Grant tenant-wide admin consent for all three permissions:
-
-```bash
-az ad app permission admin-consent --id "$ENTRA_APP_CLIENT_ID"
-```
 
 Do not grant Reader or data-plane roles to the OBO managed identity. Azure authorization must come from the signed-in user.
 
