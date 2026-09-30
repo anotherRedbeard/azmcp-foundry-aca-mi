@@ -107,11 +107,24 @@ Copy-Item .env.example .env
 Read the required values from the stable core deployment:
 
 ```bash
-az deployment group show \
+outputs="$(az deployment group show \
   --resource-group rg-azmcp-passthrough-dev \
   --name user-passthrough-foundation \
-  --query "properties.outputs.{ENTRA_TENANT_ID:AZURE_TENANT_ID.value,ENTRA_SPA_CLIENT_ID:SPA_CLIENT_ID.value,FOUNDRY_API_SCOPE:FOUNDRY_API_SCOPE.value,APIM_RESPONSES_URL:RESPONSES_API_URL.value}" \
-  --output yaml
+  --query properties.outputs \
+  --output json)"
+
+jq -r '
+  def output($name):
+    to_entries
+    | map(select((.key | ascii_downcase) == ($name | ascii_downcase)))
+    | first
+    | .value.value;
+
+  "ENTRA_TENANT_ID=\(output("AZURE_TENANT_ID"))",
+  "ENTRA_SPA_CLIENT_ID=\(output("SPA_CLIENT_ID"))",
+  "FOUNDRY_API_SCOPE=\(output("FOUNDRY_API_SCOPE"))",
+  "APIM_RESPONSES_URL=\(output("RESPONSES_API_URL"))"
+' <<< "$outputs"
 ```
 
 Copy those values into `.env`.
