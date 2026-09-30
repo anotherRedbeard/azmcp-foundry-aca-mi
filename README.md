@@ -22,7 +22,6 @@ Quick links:
 
 - [Deploy the managed-identity variant](managed-identity/README.md)
 - [Deploy the user-passthrough/OBO variant](user-passthrough/README.md)
-- [Configure the optional web application workflows](web-host/README.md)
 - [Configure MCP Inspector through managed-identity APIM](managed-identity/README.md#9-use-mcp-inspector-through-apim)
 
 ## Keep the variants isolated
@@ -41,8 +40,8 @@ Do not combine or share the variants':
 - Core infrastructure deployments or deployment outputs
 - Web application configuration
 
-Each optional [web-host deployment](web-host/README.md) uses a separate resource
-group and reads configuration only from its matching core deployment.
+Each optional web application deployment uses a separate resource group and
+reads configuration only from its matching core deployment.
 
 Pointing one variant at the other variant's MCP endpoint creates a hybrid identity flow and invalidates the authorization model.
 

@@ -210,22 +210,45 @@ The UI provides:
 ```bash
 npm run check
 python -m compileall app
+```
+
+Optionally confirm that the production container image builds:
+
+```bash
 docker build .
 ```
 
 ## 4. Deploy to Azure
 
-1. Follow the [web-host deployment guide](../../web-host/README.md) to
-   configure the `user-passthrough-web-dev` GitHub Environment and GitHub OIDC.
-2. Run **Deploy user-passthrough web app** from the repository's **Actions**
+Create the `user-passthrough-web-dev` GitHub Environment and add these secrets:
+
+| Secret | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | GitHub deployment application client ID |
+| `AZURE_TENANT_ID` | Azure tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Target Azure subscription ID |
+
+Add a federated credential to the GitHub deployment application with:
+
+| Setting | Value |
+| --- | --- |
+| Organization | GitHub repository owner |
+| Repository | This repository |
+| Entity type | Environment |
+| Environment | `user-passthrough-web-dev` |
+
+The deployment identity needs `Contributor` and `User Access Administrator` on
+the target subscription.
+
+1. Run **Deploy user-passthrough web app** from the repository's **Actions**
    page.
-3. Copy the application URL from the workflow summary.
-4. In the deployed Container App, replace the `apim-subscription-key` secret's
+2. Copy the application URL from the workflow summary.
+3. In the deployed Container App, replace the `apim-subscription-key` secret's
    `replace-before-use` value with the APIM test subscription key, then restart
    or create a revision.
-5. Add the application URL to the SPA registration under **Authentication >
+4. Add the application URL to the SPA registration under **Authentication >
    Single-page application**.
-6. Open the application URL and sign in.
+5. Open the application URL and sign in.
 
 The web workflow deploys only this application to its own Azure Container Apps
 environment and resource group.

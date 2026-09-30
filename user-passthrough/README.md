@@ -30,8 +30,8 @@ The editable diagram is [`foundry-apim-mcp-user-passthrough.excalidraw`](foundry
 - A GitHub Actions deployment application configured for OIDC
 - `Contributor` on the target subscription
 
-See [`../web-host/README.md`](../web-host/README.md) for the GitHub OIDC
-federated-credential pattern.
+Add a federated credential to the GitHub deployment application for this
+repository's `user-passthrough-infra-dev` GitHub Environment.
 
 ## 1. Configure Entra applications
 

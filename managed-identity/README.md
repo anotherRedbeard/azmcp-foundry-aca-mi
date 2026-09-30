@@ -28,8 +28,8 @@ The editable diagram is [`foundry-apim-mcp-managed-identity.excalidraw`](foundry
 - A GitHub Actions deployment application configured for OIDC
 - `Contributor` and `User Access Administrator` on the target subscription
 
-See [`../web-host/README.md`](../web-host/README.md) for the GitHub OIDC
-federated-credential pattern.
+Add a federated credential to the GitHub deployment application for this
+repository's `managed-identity-infra-dev` GitHub Environment.
 
 ## 1. Configure Entra applications
 
