@@ -174,19 +174,34 @@ Do not grant Reader or data-plane roles to the OBO managed identity. Azure autho
 
 ## 5. Add the OBO federated credential
 
-On the manually created MCP app registration, open **Certificates & secrets >
-Federated credentials** and add:
+Azure MCP receives the delegated MCP token obtained through the Foundry OAuth
+connection. To exchange that token for downstream Azure access through OBO,
+Azure MCP must authenticate as the MCP protected API application. This
+federated credential allows the Container App's user-assigned managed identity
+to provide that application credential without storing a client secret.
 
-| Setting | Value |
-| --- | --- |
-| Issuer | `https://login.microsoftonline.com/<tenant-id>/v2.0` |
-| Subject | `$OBO_MANAGED_IDENTITY_PRINCIPAL_ID` |
-| Audience | `api://AzureADTokenExchange` |
-| Name | `AzureMcpServerCredential` |
+On the manually created MCP protected API registration:
 
-The subject is the managed identity's principal/object ID, not its client ID.
-This step is intentionally manual because the managed identity is created by
-the infrastructure workflow.
+1. Open **Certificates & secrets > Federated credentials**.
+2. Select **Add credential**.
+3. For the federated credential scenario, select **Managed identity**.
+4. Select the Azure subscription containing the deployed infrastructure.
+5. For the managed identity type, select **User-assigned managed identity**.
+6. Select the identity named `<container-app-name>-obo-identity`. With the
+   default deployment name, this is
+   `azure-mcp-storage-server-obo-obo-identity`.
+7. Confirm that **Subject identifier** is automatically populated with
+   `$OBO_MANAGED_IDENTITY_PRINCIPAL_ID`.
+8. Enter `AzureMcpServerCredential` as the credential name and create it.
+
+The portal supplies the tenant v2 issuer and
+`api://AzureADTokenExchange` audience for the **Managed identity** scenario.
+The populated subject is the user-assigned identity's principal/object ID, not
+its client ID.
+
+This step is intentionally manual because the user-assigned identity does not
+exist until the infrastructure workflow completes. The token exchange occurs
+in Azure MCP, not in Foundry.
 
 ## 6. Create the Foundry agent
 
