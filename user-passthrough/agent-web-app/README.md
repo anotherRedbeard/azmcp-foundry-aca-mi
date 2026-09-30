@@ -2,7 +2,25 @@
 
 An authenticated single-page chat application that invokes a Microsoft Foundry prompt agent through Azure API Management.
 
-## Request flow
+Use this guide after completing steps 1-8 in the
+[user-passthrough deployment guide](../README.md). The core infrastructure
+workflow deploys the APIM Responses API and policy. Do not create or configure
+another APIM API for the web application.
+
+## Before you start
+
+Confirm that:
+
+- The user-passthrough infrastructure workflow completed successfully.
+- The Foundry agent is published and connected to the OAuth MCP connection.
+- You can invoke the agent successfully from the Foundry playground.
+- You can retrieve the APIM test subscription key for local testing.
+
+## Deployed request flow (reference)
+
+> [!NOTE]
+> This section explains the deployed authentication flow. It is not an
+> additional configuration procedure.
 
 ```text
 Browser SPA
@@ -44,55 +62,23 @@ Foundry, not in this web application.
 
 The first MCP tool call can return an OAuth consent link. The UI opens that link in a new tab and continues the pending response after the user confirms authorization. Use the same account for the SPA and MCP consent flow when exact end-to-end identity continuity is required.
 
-Configure the direct MCP tool with `require_approval: always`. The UI displays each `mcp_approval_request`, including the server, tool, and arguments, and sends an explicit approval or rejection before Foundry continues the response.
+The completed core setup configures the direct MCP tool with
+`require_approval: always`. The UI displays each `mcp_approval_request`,
+including the server, tool, and arguments, and sends an explicit approval or
+rejection before Foundry continues the response.
 
-The Foundry custom OAuth connection must include `offline_access` and use the tenant v2 token endpoint for both its token URL and refresh URL. Without the refresh URL, the MCP access token expires and APIM rejects later tool calls.
+The completed core setup also configures the Foundry custom OAuth connection
+with `offline_access` and the tenant v2 token endpoint for both its token URL
+and refresh URL. Without the refresh URL, the MCP access token expires and APIM
+rejects later tool calls.
 
-## SPA registration
+The SPA registration, delegated Foundry permission, APIM `POST /responses`
+operation, CORS policy, token validation, bearer-token forwarding, and fixed
+`agent_reference` are established by the core deployment guide and workflow.
+The SPA stores the latest response ID in memory for multi-turn conversations
+and clears it when **New chat** is selected.
 
-1. Create a single-tenant registration such as `Foundry Agent SPA`.
-2. Add the **Single-page application** platform.
-3. Add `http://localhost:3000` as a redirect URI.
-4. Add the **Azure Machine Learning Services** delegated `user_impersonation` permission.
-5. Grant consent if tenant policy requires it.
-6. Do not create a client secret.
-
-Select **Azure Machine Learning Services** by name and add its delegated
-`user_impersonation` permission. No application or permission ID needs to be
-copied into this repository.
-
-For Azure deployment, add the deployed HTTPS origin as another SPA redirect URI.
-
-## APIM Responses operation
-
-Configure a `POST /responses` operation that:
-
-1. Allows the web application's origins through CORS.
-2. Validates the tenant-specific token issuer and `aud=https://ai.azure.com`.
-3. Requires `scp=user_impersonation`.
-4. Requires the SPA application ID in the v1 token's `appid` claim.
-5. Injects the fixed Foundry `agent_reference`.
-6. Preserves the inbound `Authorization` header instead of replacing it with an APIM managed-identity token.
-7. Forwards the request to:
-
-```text
-https://<foundry-resource>.services.ai.azure.com/api/projects/<project>/openai/v1/responses
-```
-
-Each signed-in user needs the required Foundry project RBAC role.
-
-The SPA request body contains:
-
-```json
-{
-  "input": "User message",
-  "previous_response_id": "optional-response-id"
-}
-```
-
-APIM supplies the agent reference. The SPA stores the latest response ID in memory for multi-turn conversations and clears it when **New chat** is selected.
-
-## Subscription key
+### Subscription key
 
 When the APIM API or product requires a subscription, the SPA sends:
 
@@ -102,32 +88,50 @@ Ocp-Apim-Subscription-Key: <key>
 
 The key is stored only in the server environment and is added by FastAPI when forwarding to APIM. It is not returned through `/api/config` or included in the browser bundle. The delegated Foundry token remains the authorization boundary.
 
-## Configuration
+## 1. Configure the local application
 
 On macOS or Linux:
 
 ```bash
+cd user-passthrough/agent-web-app
 cp .env.example .env
 ```
 
 On Windows PowerShell:
 
 ```powershell
+Set-Location user-passthrough/agent-web-app
 Copy-Item .env.example .env
 ```
 
+Read the required values from the stable core deployment:
+
+```bash
+az deployment group show \
+  --resource-group rg-azmcp-passthrough-dev \
+  --name user-passthrough-foundation \
+  --query "properties.outputs.{ENTRA_TENANT_ID:AZURE_TENANT_ID.value,ENTRA_SPA_CLIENT_ID:SPA_CLIENT_ID.value,FOUNDRY_API_SCOPE:FOUNDRY_API_SCOPE.value,APIM_RESPONSES_URL:RESPONSES_API_URL.value}" \
+  --output yaml
+```
+
+Copy those values into `.env`.
+
 | Variable | Purpose |
 |---|---|
-| `ENTRA_TENANT_ID` | Microsoft Entra tenant ID |
-| `ENTRA_SPA_CLIENT_ID` | SPA registration client ID |
-| `FOUNDRY_API_SCOPE` | Foundry delegated scope; use `https://ai.azure.com/user_impersonation` |
-| `APIM_RESPONSES_URL` | Complete APIM URL for `POST /responses` |
-| `APIM_SUBSCRIPTION_KEY` | Server-side APIM product subscription key; never exposed through public runtime configuration |
+| `ENTRA_TENANT_ID` | `AZURE_TENANT_ID` deployment output |
+| `ENTRA_SPA_CLIENT_ID` | `SPA_CLIENT_ID` deployment output |
+| `FOUNDRY_API_SCOPE` | `FOUNDRY_API_SCOPE` deployment output |
+| `APIM_RESPONSES_URL` | `RESPONSES_API_URL` deployment output |
+| `APIM_SUBSCRIPTION_KEY` | Primary key for the APIM test subscription |
 | `PORT` | FastAPI port; defaults to `3000` |
+
+Retrieve the subscription key from **API Management > Subscriptions** in the
+Azure portal. Select the test subscription created by the infrastructure
+deployment and copy its primary key. Store the key only in `.env`.
 
 Only `ENTRA_TENANT_ID`, `ENTRA_SPA_CLIENT_ID`, and `FOUNDRY_API_SCOPE` are delivered to the SPA by `/api/config`. The APIM URL and subscription key remain server-side.
 
-## Run locally
+## 2. Run locally
 
 ### macOS and Linux
 
@@ -188,7 +192,7 @@ The UI provides:
 - Multi-line composer with Enter-to-send
 - New-chat and sign-out controls
 
-## Validate
+## 3. Validate
 
 ```bash
 npm run check
@@ -196,15 +200,22 @@ python -m compileall app
 docker build .
 ```
 
-## Deploy to Azure
+## 4. Deploy to Azure
 
-Run **Deploy user-passthrough web app** after the user-passthrough core
-infrastructure workflow succeeds. The web workflow deploys only this application
-to its own Azure Container Apps environment and resource group.
+1. Follow the [web-host deployment guide](../../web-host/README.md) to
+   configure the `user-passthrough-web-dev` GitHub Environment and GitHub OIDC.
+2. Run **Deploy user-passthrough web app** from the repository's **Actions**
+   page.
+3. Copy the application URL from the workflow summary.
+4. In the deployed Container App, replace the `apim-subscription-key` secret's
+   `replace-before-use` value with the APIM test subscription key, then restart
+   or create a revision.
+5. Add the application URL to the SPA registration under **Authentication >
+   Single-page application**.
+6. Open the application URL and sign in.
 
-Follow the [web-host deployment guide](../../web-host/README.md) to configure
-GitHub OIDC, run the workflow, replace the placeholder APIM subscription key,
-and register the deployed SPA redirect URI.
+The web workflow deploys only this application to its own Azure Container Apps
+environment and resource group.
 
 ## Troubleshooting
 

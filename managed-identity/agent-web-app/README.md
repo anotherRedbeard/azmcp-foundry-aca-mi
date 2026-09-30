@@ -2,7 +2,25 @@
 
 An authenticated single-page chat application that invokes a Microsoft Foundry prompt agent through Azure API Management.
 
-## Request flow
+Use this guide after completing steps 1-8 in the
+[managed-identity deployment guide](../README.md). The core infrastructure
+workflow deploys the APIM Responses API and policy. Do not create or configure
+another APIM API for the web application.
+
+## Before you start
+
+Confirm that:
+
+- The managed-identity infrastructure workflow completed successfully.
+- The Foundry agent is published and connected to the APIM MCP endpoint.
+- You can invoke the agent successfully from the Foundry playground.
+- You can retrieve the APIM test subscription key for local testing.
+
+## Deployed request flow (reference)
+
+> [!NOTE]
+> This section explains the deployed authentication flow. It is not an
+> additional configuration procedure.
 
 ```text
 Browser SPA
@@ -30,89 +48,19 @@ The browser uses authorization code with PKCE and calls the same-origin `/api/re
 
 The signed-in user's token authorizes both the Express proxy and the APIM Responses operation. APIM injects a fixed `agent_reference`, replaces the user credential with its managed-identity token, and forwards the request to Foundry. The user token never reaches Foundry.
 
-When the agent returns an `mcp_approval_request`, the UI displays the MCP server, tool name, and arguments. The user must approve or reject every pending call before the app continues the response with validated `mcp_approval_response` items. Configure the agent's MCP tool with `require_approval: always` to demonstrate this flow.
+When the agent returns an `mcp_approval_request`, the UI displays the MCP
+server, tool name, and arguments. The user must approve or reject every pending
+call before the app continues the response with validated
+`mcp_approval_response` items. The completed core setup configures the agent's
+MCP tool with `require_approval: always`.
 
-No client secret is required.
+No client secret is required. The core deployment guide and workflow establish
+the Entra registrations, delegated scope, APIM `POST /responses` operation,
+CORS policy, token validation, managed-identity authentication, and fixed
+`agent_reference`. The SPA stores the latest response ID in memory for
+multi-turn conversations and clears it when **New chat** is selected.
 
-## Entra application registrations
-
-Use separate SPA and protected API registrations.
-
-### Protected API registration
-
-1. Create a single-tenant registration such as `Foundry Agent API`.
-2. Under **Expose an API**, accept `api://<API-client-id>`.
-3. Add an enabled delegated scope named `access_as_user`.
-4. Permit user or admin consent according to tenant policy.
-5. Do not add a redirect URI or client credential.
-6. Set this manifest property:
-
-```json
-"requestedAccessTokenVersion": 2
-```
-
-Record the complete scope:
-
-```text
-api://<API-client-id>/access_as_user
-```
-
-### SPA registration
-
-1. Create a single-tenant registration such as `Foundry Agent SPA`.
-2. Add the **Single-page application** platform.
-3. Add `http://localhost:3000` as a redirect URI.
-4. Add the protected API's delegated `access_as_user` permission.
-5. Grant consent if tenant policy requires it.
-6. Do not create a client secret.
-
-For Azure deployment, add the deployed HTTPS origin as another SPA redirect URI.
-
-## APIM Responses operation
-
-Configure a `POST /responses` operation that:
-
-1. Allows the web application's origins through CORS.
-2. Validates the token tenant and protected API audience.
-3. Requires `scp=access_as_user`.
-4. Requires the SPA application ID in `azp`.
-5. Injects the fixed Foundry `agent_reference`.
-6. Authenticates to Foundry with APIM managed identity for `https://ai.azure.com`.
-7. Forwards to:
-
-```text
-https://<foundry-resource>.services.ai.azure.com/api/projects/<project>/openai/v1/responses
-```
-
-Grant the APIM managed identity the required Foundry project role.
-
-The SPA request body contains:
-
-```json
-{
-  "input": "User message",
-  "previous_response_id": "optional-response-id"
-}
-```
-
-Approval continuations use:
-
-```json
-{
-  "previous_response_id": "response-id",
-  "input": [
-    {
-      "type": "mcp_approval_response",
-      "approval_request_id": "approval-request-id",
-      "approve": true
-    }
-  ]
-}
-```
-
-APIM supplies the agent reference. The SPA stores the latest response ID in memory for multi-turn conversations and clears it when **New chat** is selected.
-
-## Subscription key
+### Subscription key
 
 When the APIM API or product requires a subscription, the SPA sends:
 
@@ -122,33 +70,51 @@ Ocp-Apim-Subscription-Key: <key>
 
 The key is stored only in the server environment and is added by Express when forwarding to APIM. It is not returned through `/api/config` or included in the browser bundle. Entra JWT validation remains the authorization boundary.
 
-## Configuration
+## 1. Configure the local application
 
 On macOS or Linux:
 
 ```bash
+cd managed-identity/agent-web-app
 cp .env.example .env
 ```
 
 On Windows PowerShell:
 
 ```powershell
+Set-Location managed-identity/agent-web-app
 Copy-Item .env.example .env
 ```
 
+Read the required values from the stable core deployment:
+
+```bash
+az deployment group show \
+  --resource-group rg-azmcp-managed-dev \
+  --name managed-identity-foundation \
+  --query "properties.outputs.{ENTRA_TENANT_ID:AZURE_TENANT_ID.value,ENTRA_SPA_CLIENT_ID:SPA_CLIENT_ID.value,ENTRA_API_SCOPE:ENTRA_API_SCOPE.value,APIM_RESPONSES_URL:RESPONSES_API_URL.value}" \
+  --output yaml
+```
+
+Copy those values into `.env`.
+
 | Variable | Purpose |
 |---|---|
-| `ENTRA_TENANT_ID` | Microsoft Entra tenant ID |
-| `ENTRA_SPA_CLIENT_ID` | SPA registration client ID |
-| `ENTRA_API_SCOPE` | Complete delegated scope, such as `api://<API-client-id>/access_as_user` |
-| `APIM_RESPONSES_URL` | Complete APIM URL for `POST /responses` |
-| `APIM_SUBSCRIPTION_KEY` | Server-side APIM product subscription key; never exposed through public runtime configuration |
+| `ENTRA_TENANT_ID` | `AZURE_TENANT_ID` deployment output |
+| `ENTRA_SPA_CLIENT_ID` | `SPA_CLIENT_ID` deployment output |
+| `ENTRA_API_SCOPE` | `ENTRA_API_SCOPE` deployment output |
+| `APIM_RESPONSES_URL` | `RESPONSES_API_URL` deployment output |
+| `APIM_SUBSCRIPTION_KEY` | Primary key for the APIM test subscription |
 | `PORT` | Express port; defaults to `3000` |
 | `NODE_ENV` | Express runtime environment |
 
+Retrieve the subscription key from **API Management > Subscriptions** in the
+Azure portal. Select the test subscription created by the infrastructure
+deployment and copy its primary key. Store the key only in `.env`.
+
 Only `ENTRA_TENANT_ID`, `ENTRA_SPA_CLIENT_ID`, and `ENTRA_API_SCOPE` are delivered to the SPA by `/api/config`. The APIM URL and subscription key remain server-side.
 
-## Run locally
+## 2. Run locally
 
 ### macOS and Linux
 
@@ -174,22 +140,29 @@ The UI provides:
 - Multi-line composer with Enter-to-send
 - New-chat and sign-out controls
 
-## Validate
+## 3. Validate
 
 ```bash
 npm run check
 docker build .
 ```
 
-## Deploy to Azure
+## 4. Deploy to Azure
 
-Run **Deploy managed-identity web app** after the managed-identity core
-infrastructure workflow succeeds. The web workflow deploys only this application
-to its own Azure Container Apps environment and resource group.
+1. Follow the [web-host deployment guide](../../web-host/README.md) to
+   configure the `managed-identity-web-dev` GitHub Environment and GitHub OIDC.
+2. Run **Deploy managed-identity web app** from the repository's **Actions**
+   page.
+3. Copy the application URL from the workflow summary.
+4. In the deployed Container App, replace the `apim-subscription-key` secret's
+   `replace-before-use` value with the APIM test subscription key, then restart
+   or create a revision.
+5. Add the application URL to the SPA registration under **Authentication >
+   Single-page application**.
+6. Open the application URL and sign in.
 
-Follow the [web-host deployment guide](../../web-host/README.md) to configure
-GitHub OIDC, run the workflow, replace the placeholder APIM subscription key,
-and register the deployed SPA redirect URI.
+The web workflow deploys only this application to its own Azure Container Apps
+environment and resource group.
 
 ## Troubleshooting
 
