@@ -224,7 +224,14 @@ Then, in the deployed Foundry project:
 
 ## 7. Create the OAuth MCP connection
 
-Grant the confidential OAuth client the MCP application's delegated `Mcp.Tools.ReadWrite` permission:
+This is a separate one-time permission from the downstream permissions
+configured on the MCP protected API in step 1. It allows the confidential
+Foundry OAuth client to request a delegated token for the MCP API; it does not
+grant the client direct access to Azure resources.
+
+Open the confidential Foundry OAuth client registration and check **API
+permissions**. If the MCP protected API's delegated `Mcp.Tools.ReadWrite`
+permission is already listed, do not add it again. Otherwise, add it with:
 
 ```bash
 az ad app permission add \
@@ -233,6 +240,10 @@ az ad app permission add \
   --api-permissions "$ENTRA_APP_SCOPE_ID=Scope"
 ```
 
+Grant admin consent if required by your tenant's consent policy. The user who
+authorizes the Foundry connection still supplies the delegated identity used by
+the OBO flow.
+
 In the Foundry project, create a remote MCP connection named
 `AzureMcpApim2` with:
 
@@ -240,12 +251,16 @@ In the Foundry project, create a remote MCP connection named
 | --- | --- |
 | Target | `$MCP_API_URL` |
 | Authentication | OAuth 2.0 |
-| Authorization URL | `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/authorize` |
-| Token URL | `https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token` |
+| Authorization URL | `https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/v2.0/authorize` |
+| Token URL | `https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/v2.0/token` |
 | Refresh URL | Same tenant v2 token endpoint |
 | Client ID | Confidential Foundry MCP OAuth client ID |
 | Client secret | Confidential client secret |
 | Scopes | `openid offline_access api://<mcp-app-id>/Mcp.Tools.ReadWrite` |
+
+Use the exact `AZURE_TENANT_ID` value loaded from the deployment outputs in
+step 4 for all three OAuth URLs. Do not substitute an application ID, tenant
+domain, or a different tenant.
 
 Add Foundry's generated redirect URI to the confidential client registration,
 complete the connection's OAuth consent flow, and attach the connection directly

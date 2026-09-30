@@ -14,6 +14,8 @@ Confirm that:
 - The user-passthrough infrastructure workflow completed successfully.
 - The Foundry agent is published and connected to the OAuth MCP connection.
 - You can invoke the agent successfully from the Foundry playground.
+- Every user testing the web application has the project-scoped **Foundry
+  User** role.
 - You can retrieve the APIM test subscription key for local testing.
 
 ## Deployed request flow (reference)
