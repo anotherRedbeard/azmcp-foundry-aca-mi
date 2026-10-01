@@ -252,8 +252,10 @@ the target subscription.
    then save the secret.
 6. Open **Application > Revisions and replicas**, select the active revision,
    and restart it so the application loads the new secret value.
-7. Add the application URL to the SPA registration under **Authentication >
-   Single-page application**.
+7. In Microsoft Entra ID, open the SPA app registration and go to
+   **Authentication > Single-page application**. Add the exact Container App
+   application URL copied from the workflow summary as a redirect URI. Do not
+   add it under the **Web** platform.
 8. Open the application URL and sign in.
 
 The web workflow deploys only this application to its own Azure Container Apps

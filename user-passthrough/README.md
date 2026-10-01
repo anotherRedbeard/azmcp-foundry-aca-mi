@@ -67,11 +67,18 @@ Create a single-tenant registration for the OBO MCP endpoint:
 2. Set `requestedAccessTokenVersion` to `2`.
 3. Add delegated scope `Mcp.Tools.ReadWrite`.
 4. Add these delegated API permissions:
-   - Azure Service Management `user_impersonation`
+   - Azure management API `user_impersonation` (application ID
+     `797f4846-ba00-4fd7-ba43-dac1f8f63013`)
    - Azure Storage `user_impersonation`
    - Azure Resource Manager MCP `MCP.Access`
 5. Grant tenant-wide admin consent.
 6. Ensure its enterprise application/service principal exists.
+
+The Azure management API's display name varies by tenant and can appear as
+**Azure Resource Manager**, **Azure Service Management**, or **Windows Azure
+Service Management API**. Under **APIs my organization uses**, search for its
+application ID `797f4846-ba00-4fd7-ba43-dac1f8f63013`, then select the delegated
+`user_impersonation` permission.
 
 Record:
 
