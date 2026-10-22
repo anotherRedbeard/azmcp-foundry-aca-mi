@@ -174,6 +174,16 @@ class ChatApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_web_shell_disables_browser_caching(self) -> None:
+        for path in ("/", "/index.html", "/app.js", "/styles.css"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.headers["cache-control"],
+                    "no-store, no-cache, must-revalidate",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

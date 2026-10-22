@@ -41,51 +41,59 @@
       </section>
 
       <section id="chat-panel" class="chat-panel" hidden>
-        <div class="history-bar">
-          <label class="sr-only" for="conversation-select">Saved conversation</label>
-          <select id="conversation-select" aria-label="Saved conversation">
-            <option value="">New conversation</option>
-          </select>
-          <button id="delete-conversation-button" class="button" type="button" disabled>
-            Delete chat
-          </button>
-          <button id="clear-history-button" class="button danger" type="button" disabled>
-            Clear history
-          </button>
-        </div>
-
-        <div id="messages" class="messages" aria-live="polite">
-          <div class="message-list">
-            <article class="message assistant">
-              <div class="avatar">A</div>
-              <div class="bubble">
-                <p class="message-label">Agent</p>
-                <p>How can I help you explore your Azure environment?</p>
-              </div>
-            </article>
+        <aside class="history-sidebar" aria-label="Chat history">
+          <div class="history-actions">
+            <button id="new-chat-button" class="button primary" type="button">
+              New chat
+            </button>
+            <button id="clear-history-button" class="button danger" type="button" disabled>
+              Clear history
+            </button>
           </div>
-        </div>
+          <div class="history-heading">
+            <span>Chats</span>
+            <span id="history-count" class="history-count">0</span>
+          </div>
+          <div id="conversation-list" class="conversation-list"></div>
+          <p id="history-empty" class="history-empty">
+            Saved chats appear here after you send the first message.
+          </p>
+        </aside>
 
-        <form id="chat-form" class="composer">
-          <div class="composer-inner">
-            <label class="sr-only" for="message">Message the agent</label>
-            <div class="composer-row">
-              <textarea
-                id="message"
-                name="message"
-                rows="1"
-                maxlength="8000"
-                placeholder="Ask about your Azure environment..."
-                required
-              ></textarea>
-              <button id="send-button" class="send-button" type="submit">
-                <span>Send</span>
-                <span aria-hidden="true">↑</span>
-              </button>
+        <div class="conversation-panel">
+          <div id="messages" class="messages" aria-live="polite">
+            <div class="message-list">
+              <article class="message assistant">
+                <div class="avatar">A</div>
+                <div class="bubble">
+                  <p class="message-label">Agent</p>
+                  <p>How can I help you explore your Azure environment?</p>
+                </div>
+              </article>
             </div>
-            <p id="form-status" class="form-status" role="status"></p>
           </div>
-        </form>
+
+          <form id="chat-form" class="composer">
+            <div class="composer-inner">
+              <label class="sr-only" for="message">Message the agent</label>
+              <div class="composer-row">
+                <textarea
+                  id="message"
+                  name="message"
+                  rows="1"
+                  maxlength="8000"
+                  placeholder="Ask about your Azure environment..."
+                  required
+                ></textarea>
+                <button id="send-button" class="send-button" type="submit">
+                  <span>Send</span>
+                  <span aria-hidden="true">↑</span>
+                </button>
+              </div>
+              <p id="form-status" class="form-status" role="status"></p>
+            </div>
+          </form>
+        </div>
       </section>
     </main>
 

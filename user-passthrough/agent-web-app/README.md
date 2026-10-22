@@ -80,8 +80,12 @@ operation, CORS policy, token validation, bearer-token forwarding, and fixed
 The deployed application stores conversation metadata, messages, and the
 latest Foundry response ID in Azure Cosmos DB for NoSQL. After sign-in, the UI
 automatically opens the most recently updated conversation. Users can select a
-different saved conversation, delete one conversation, or clear all of their
-history.
+different saved conversation from the left sidebar, delete one conversation
+from its three-dot menu, or clear all history from the top of the sidebar.
+
+Selecting **New chat** opens an empty conversation without deleting the current
+one. The new conversation is created and added to the sidebar when the user
+sends its first message; empty drafts are not saved.
 
 Cosmos data is partitioned by the validated Entra `oid` claim. FastAPI derives
 that value from the access token and never accepts a user ID from the browser.
@@ -230,8 +234,9 @@ The UI provides:
 - Automatic scrolling to the newest message
 - Multi-line composer with Enter-to-send
 - Automatic restore of the latest saved conversation
-- Saved-conversation selection
-- New-chat, delete-chat, clear-history, and sign-out controls
+- Left sidebar with saved-conversation selection
+- Per-chat three-dot delete menus
+- New-chat, clear-history, and sign-out controls
 
 ## 3. Validate
 
@@ -316,6 +321,13 @@ chat-history container, and that `CHAT_HISTORY_BACKEND=cosmos` plus the three
 For local Cosmos testing, confirm that `az account show` succeeds and your
 signed-in identity has the same Cosmos data-plane role. Use
 `CHAT_HISTORY_BACKEND=memory` when Cosmos persistence is not needed locally.
+
+### History controls appear but no chats are saved
+
+Hard-refresh the browser once after upgrading from a version without chat
+history. A stale cached `app.js` can display the newer HTML controls without
+calling `/api/conversations`. Current releases disable caching for the web
+shell and client assets so later deployments load the matching bundle.
 
 ### Unexpected issuer or audience
 

@@ -10,10 +10,10 @@ const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
 const sendButton = document.querySelector("#send-button");
 const formStatus = document.querySelector("#form-status");
-const conversationSelect = document.querySelector("#conversation-select");
-const deleteConversationButton = document.querySelector(
-  "#delete-conversation-button",
-);
+const conversationList = document.querySelector("#conversation-list");
+const historyEmpty = document.querySelector("#history-empty");
+const historyCount = document.querySelector("#history-count");
+const newChatButton = document.querySelector("#new-chat-button");
 const clearHistoryButton = document.querySelector("#clear-history-button");
 
 let authClient;
@@ -24,7 +24,6 @@ let activeConversationId;
 let conversations = [];
 let oauthConsentPending = false;
 let requestInProgress = false;
-let newChatButton;
 
 async function acquireApiToken() {
   try {
@@ -300,29 +299,99 @@ function createConversationTitle(message) {
   return oneLine.length > 72 ? `${oneLine.slice(0, 71)}...` : oneLine;
 }
 
-function renderConversationOptions() {
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "New conversation";
+function formatConversationDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
 
-  const options = conversations.map((conversation) => {
-    const option = document.createElement("option");
-    option.value = conversation.id;
-    option.textContent = conversation.title;
-    return option;
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function closeConversationMenus(exceptConversationId) {
+  for (const menu of conversationList.querySelectorAll(".conversation-menu")) {
+    const keepOpen =
+      menu.closest(".conversation-item")?.dataset.conversationId ===
+      exceptConversationId;
+    menu.hidden = !keepOpen;
+    menu.previousElementSibling?.setAttribute(
+      "aria-expanded",
+      keepOpen ? "true" : "false",
+    );
+  }
+}
+
+function renderConversationList() {
+  const items = conversations.map((conversation) => {
+    const item = document.createElement("div");
+    item.className = "conversation-item";
+    item.dataset.conversationId = conversation.id;
+    item.classList.toggle("active", conversation.id === activeConversationId);
+
+    const openButton = document.createElement("button");
+    openButton.className = "conversation-open";
+    openButton.type = "button";
+    openButton.disabled = requestInProgress;
+    openButton.setAttribute(
+      "aria-label",
+      `Open conversation: ${conversation.title}`,
+    );
+
+    const title = document.createElement("span");
+    title.className = "conversation-title";
+    title.textContent = conversation.title;
+
+    const date = document.createElement("span");
+    date.className = "conversation-date";
+    date.textContent = formatConversationDate(conversation.updatedAt);
+    openButton.append(title, date);
+
+    const menuWrap = document.createElement("div");
+    menuWrap.className = "conversation-menu-wrap";
+
+    const menuButton = document.createElement("button");
+    menuButton.className = "conversation-menu-button";
+    menuButton.type = "button";
+    menuButton.disabled = requestInProgress;
+    menuButton.textContent = "...";
+    menuButton.setAttribute("aria-label", `Actions for ${conversation.title}`);
+    menuButton.setAttribute("aria-expanded", "false");
+
+    const menu = document.createElement("div");
+    menu.className = "conversation-menu";
+    menu.hidden = true;
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "conversation-delete";
+    deleteButton.type = "button";
+    deleteButton.textContent = "Delete chat";
+    menu.append(deleteButton);
+    menuWrap.append(menuButton, menu);
+    item.append(openButton, menuWrap);
+    return item;
   });
 
-  conversationSelect.replaceChildren(placeholder, ...options);
-  conversationSelect.value = activeConversationId ?? "";
-  deleteConversationButton.disabled =
-    requestInProgress || !activeConversationId;
+  conversationList.replaceChildren(...items);
+  historyEmpty.hidden = conversations.length > 0;
+  historyCount.textContent = String(conversations.length);
   clearHistoryButton.disabled =
     requestInProgress || conversations.length === 0;
 }
 
 async function refreshConversationList() {
   conversations = await authenticatedFetch("/api/conversations");
-  renderConversationOptions();
+  renderConversationList();
 }
 
 async function openConversation(conversationId) {
@@ -342,7 +411,7 @@ async function openConversation(conversationId) {
     }
   }
 
-  renderConversationOptions();
+  renderConversationList();
   formStatus.textContent = "";
   formStatus.className = "form-status";
   scrollMessagesToBottom("auto");
@@ -453,7 +522,8 @@ function resetConversation() {
   );
   formStatus.textContent = "";
   formStatus.className = "form-status";
-  renderConversationOptions();
+  closeConversationMenus();
+  renderConversationList();
   setInteractionDisabled(false);
   input.focus();
 }
@@ -462,18 +532,20 @@ function setInteractionDisabled(disabled) {
   requestInProgress = disabled;
   input.disabled = disabled;
   sendButton.disabled = disabled;
-  conversationSelect.disabled = disabled;
-  deleteConversationButton.disabled = disabled || !activeConversationId;
-  clearHistoryButton.disabled = disabled || conversations.length === 0;
-  if (newChatButton) {
-    newChatButton.disabled = disabled;
+  for (const button of conversationList.querySelectorAll("button")) {
+    button.disabled = disabled;
   }
+  clearHistoryButton.disabled = disabled || conversations.length === 0;
+  newChatButton.disabled = disabled;
 }
 
-async function deleteActiveConversation() {
+async function deleteConversation(conversationId) {
+  const conversation = conversations.find(
+    (item) => item.id === conversationId,
+  );
   if (
-    !activeConversationId ||
-    !window.confirm("Delete this conversation and all of its messages?")
+    !conversation ||
+    !window.confirm(`Delete "${conversation.title}" and all of its messages?`)
   ) {
     return;
   }
@@ -481,12 +553,21 @@ async function deleteActiveConversation() {
   setInteractionDisabled(true);
   try {
     await authenticatedFetch(
-      `/api/conversations/${encodeURIComponent(activeConversationId)}`,
+      `/api/conversations/${encodeURIComponent(conversationId)}`,
       { method: "DELETE" },
     );
-    activeConversationId = undefined;
-    previousResponseId = undefined;
-    await initializeHistory();
+    if (conversationId === activeConversationId) {
+      activeConversationId = undefined;
+      previousResponseId = undefined;
+      await refreshConversationList();
+      if (conversations.length > 0) {
+        await openConversation(conversations[0].id);
+      } else {
+        resetConversation();
+      }
+    } else {
+      await refreshConversationList();
+    }
   } finally {
     setInteractionDisabled(false);
   }
@@ -518,12 +599,6 @@ async function showAuthenticatedView() {
   const username = document.createElement("span");
   username.textContent = account.name || account.username;
 
-  newChatButton = document.createElement("button");
-  newChatButton.className = "button";
-  newChatButton.type = "button";
-  newChatButton.textContent = "New chat";
-  newChatButton.addEventListener("click", resetConversation);
-
   const logout = document.createElement("button");
   logout.className = "button";
   logout.type = "button";
@@ -535,7 +610,7 @@ async function showAuthenticatedView() {
     });
   });
 
-  accountActions.replaceChildren(username, newChatButton, logout);
+  accountActions.replaceChildren(username, logout);
   setInteractionDisabled(true);
   formStatus.textContent = "Loading chat history...";
   await initializeHistory();
@@ -582,30 +657,51 @@ signInButton.addEventListener("click", () => {
   });
 });
 
-conversationSelect.addEventListener("change", async () => {
-  const conversationId = conversationSelect.value;
-  if (!conversationId) {
-    resetConversation();
+newChatButton.addEventListener("click", resetConversation);
+
+conversationList.addEventListener("click", (event) => {
+  const item = event.target.closest(".conversation-item");
+  if (!item) {
     return;
   }
 
-  setInteractionDisabled(true);
-  try {
-    await openConversation(conversationId);
-  } catch (error) {
-    formStatus.textContent = error.message;
-    formStatus.className = "form-status error";
-  } finally {
-    setInteractionDisabled(false);
+  const conversationId = item.dataset.conversationId;
+  const menuButton = event.target.closest(".conversation-menu-button");
+  if (menuButton) {
+    const menu = item.querySelector(".conversation-menu");
+    const shouldOpen = menu.hidden;
+    closeConversationMenus(shouldOpen ? conversationId : undefined);
+    return;
   }
+
+  if (event.target.closest(".conversation-delete")) {
+    closeConversationMenus();
+    deleteConversation(conversationId).catch((error) => {
+      formStatus.textContent = error.message;
+      formStatus.className = "form-status error";
+      setInteractionDisabled(false);
+    });
+    return;
+  }
+
+  if (!event.target.closest(".conversation-open")) {
+    return;
+  }
+
+  closeConversationMenus();
+  setInteractionDisabled(true);
+  openConversation(conversationId)
+    .catch((error) => {
+      formStatus.textContent = error.message;
+      formStatus.className = "form-status error";
+    })
+    .finally(() => setInteractionDisabled(false));
 });
 
-deleteConversationButton.addEventListener("click", () => {
-  deleteActiveConversation().catch((error) => {
-    formStatus.textContent = error.message;
-    formStatus.className = "form-status error";
-    setInteractionDisabled(false);
-  });
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".conversation-menu-wrap")) {
+    closeConversationMenus();
+  }
 });
 
 clearHistoryButton.addEventListener("click", () => {
