@@ -1,7 +1,8 @@
 from functools import cached_property
+from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,20 @@ class Settings(BaseSettings):
     foundry_api_scope: str = Field(alias="FOUNDRY_API_SCOPE")
     apim_responses_url: str = Field(alias="APIM_RESPONSES_URL")
     apim_subscription_key: str = Field(alias="APIM_SUBSCRIPTION_KEY")
+    azure_hosted: bool = Field(default=False, alias="AZURE_HOSTED")
+    chat_history_backend: Literal["memory", "cosmos"] = Field(
+        default="memory",
+        alias="CHAT_HISTORY_BACKEND",
+    )
+    cosmos_endpoint: str | None = Field(default=None, alias="COSMOS_ENDPOINT")
+    cosmos_database_name: str = Field(
+        default="chat-history",
+        alias="COSMOS_DATABASE_NAME",
+    )
+    cosmos_container_name: str = Field(
+        default="conversations",
+        alias="COSMOS_CONTAINER_NAME",
+    )
 
     @field_validator(
         "entra_tenant_id",
@@ -25,6 +40,8 @@ class Settings(BaseSettings):
         "foundry_api_scope",
         "apim_responses_url",
         "apim_subscription_key",
+        "cosmos_database_name",
+        "cosmos_container_name",
     )
     @classmethod
     def require_non_empty(cls, value: str) -> str:
@@ -48,6 +65,24 @@ class Settings(BaseSettings):
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError("APIM_RESPONSES_URL must be a complete HTTPS URL")
         return value
+
+    @field_validator("cosmos_endpoint")
+    @classmethod
+    def require_cosmos_https(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("COSMOS_ENDPOINT must be a complete HTTPS URL")
+        return value
+
+    @model_validator(mode="after")
+    def require_cosmos_endpoint(self) -> "Settings":
+        if self.chat_history_backend == "cosmos" and not self.cosmos_endpoint:
+            raise ValueError(
+                "COSMOS_ENDPOINT is required when CHAT_HISTORY_BACKEND=cosmos"
+            )
+        return self
 
     @cached_property
     def foundry_scope_name(self) -> str:

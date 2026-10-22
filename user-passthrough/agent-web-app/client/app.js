@@ -10,43 +10,21 @@ const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
 const sendButton = document.querySelector("#send-button");
 const formStatus = document.querySelector("#form-status");
+const conversationSelect = document.querySelector("#conversation-select");
+const deleteConversationButton = document.querySelector(
+  "#delete-conversation-button",
+);
+const clearHistoryButton = document.querySelector("#clear-history-button");
 
 let authClient;
 let account;
 let apiScope;
 let previousResponseId;
+let activeConversationId;
+let conversations = [];
 let oauthConsentPending = false;
-
-async function callAgent(agentInput, responseId = previousResponseId) {
-  const token = await acquireApiToken();
-  const body = {
-    input: agentInput,
-  };
-
-  if (responseId) {
-    body.previous_response_id = responseId;
-  }
-
-  const response = await fetch("/api/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    const message =
-      typeof errorBody.error === "string"
-        ? errorBody.error
-        : errorBody.error?.message;
-    throw new Error(message || `Request failed with status ${response.status}.`);
-  }
-
-  return response.json();
-}
+let requestInProgress = false;
+let newChatButton;
 
 async function acquireApiToken() {
   try {
@@ -62,6 +40,41 @@ async function acquireApiToken() {
     });
     throw new Error("Redirecting to Microsoft Entra ID.");
   }
+}
+
+async function authenticatedFetch(path, options = {}) {
+  const token = await acquireApiToken();
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    const message =
+      typeof errorBody.error === "string"
+        ? errorBody.error
+        : errorBody.error?.message;
+    throw new Error(message || `Request failed with status ${response.status}.`);
+  }
+
+  return response.status === 204 ? undefined : response.json();
+}
+
+async function callAgent(agentInput, responseId = previousResponseId) {
+  const body = { input: agentInput };
+  if (responseId) {
+    body.previous_response_id = responseId;
+  }
+
+  return authenticatedFetch("/api/responses", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 function addMessage(role, text) {
@@ -86,6 +99,11 @@ function addMessage(role, text) {
   article.append(avatar, bubble);
   messageList.append(article);
   scrollMessagesToBottom();
+}
+
+function showConversationPrompt(text) {
+  messageList.replaceChildren();
+  addMessage("assistant", text);
 }
 
 function formatArguments(value) {
@@ -186,7 +204,6 @@ function addOAuthConsentMessage(consentRequest, originalMessage) {
   }
 
   oauthConsentPending = true;
-
   const article = document.createElement("article");
   article.className = "message assistant";
 
@@ -229,8 +246,7 @@ function addOAuthConsentMessage(consentRequest, originalMessage) {
       await processAgentResponse(result, originalMessage);
       formStatus.textContent = "";
       if (!oauthConsentPending) {
-        input.disabled = false;
-        sendButton.disabled = false;
+        setInteractionDisabled(false);
         input.focus();
       }
     } catch (error) {
@@ -261,14 +277,13 @@ function extractResponseText(response) {
     return response.output_text;
   }
 
-  const textParts = (response.output ?? [])
+  return (response.output ?? [])
     .filter((item) => item.type === "message")
     .flatMap((item) => item.content ?? [])
     .filter((content) => content.type === "output_text")
     .map((content) => content.text)
-    .filter(Boolean);
-
-  return textParts.join("\n");
+    .filter(Boolean)
+    .join("\n");
 }
 
 function getMcpApprovalRequests(response) {
@@ -280,11 +295,111 @@ function getMcpApprovalRequests(response) {
   );
 }
 
+function createConversationTitle(message) {
+  const oneLine = message.replace(/\s+/g, " ").trim();
+  return oneLine.length > 72 ? `${oneLine.slice(0, 71)}...` : oneLine;
+}
+
+function renderConversationOptions() {
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "New conversation";
+
+  const options = conversations.map((conversation) => {
+    const option = document.createElement("option");
+    option.value = conversation.id;
+    option.textContent = conversation.title;
+    return option;
+  });
+
+  conversationSelect.replaceChildren(placeholder, ...options);
+  conversationSelect.value = activeConversationId ?? "";
+  deleteConversationButton.disabled =
+    requestInProgress || !activeConversationId;
+  clearHistoryButton.disabled =
+    requestInProgress || conversations.length === 0;
+}
+
+async function refreshConversationList() {
+  conversations = await authenticatedFetch("/api/conversations");
+  renderConversationOptions();
+}
+
+async function openConversation(conversationId) {
+  const conversation = await authenticatedFetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}`,
+  );
+  activeConversationId = conversation.id;
+  previousResponseId = conversation.previousResponseId || undefined;
+  oauthConsentPending = false;
+  messageList.replaceChildren();
+
+  if (conversation.messages.length === 0) {
+    addMessage("assistant", "This conversation is ready.");
+  } else {
+    for (const message of conversation.messages) {
+      addMessage(message.role, message.content);
+    }
+  }
+
+  renderConversationOptions();
+  formStatus.textContent = "";
+  formStatus.className = "form-status";
+  scrollMessagesToBottom("auto");
+}
+
+async function initializeHistory() {
+  await refreshConversationList();
+  if (conversations.length > 0) {
+    await openConversation(conversations[0].id);
+  } else {
+    resetConversation();
+  }
+}
+
+async function ensureConversation(firstMessage) {
+  if (activeConversationId) {
+    return activeConversationId;
+  }
+
+  const conversation = await authenticatedFetch("/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({
+      title: createConversationTitle(firstMessage),
+    }),
+  });
+  activeConversationId = conversation.id;
+  previousResponseId = undefined;
+  await refreshConversationList();
+  return activeConversationId;
+}
+
+async function persistMessage(role, content) {
+  await authenticatedFetch(
+    `/api/conversations/${encodeURIComponent(activeConversationId)}/messages`,
+    {
+      method: "POST",
+      body: JSON.stringify({ role, content }),
+    },
+  );
+}
+
+async function persistPreviousResponseId(responseId) {
+  await authenticatedFetch(
+    `/api/conversations/${encodeURIComponent(activeConversationId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ previousResponseId: responseId }),
+    },
+  );
+}
+
 async function processAgentResponse(initialResponse, originalMessage) {
   let response = initialResponse;
 
   for (let round = 0; round < 10; round += 1) {
     previousResponseId = response.id;
+    await persistPreviousResponseId(previousResponseId);
 
     const consentRequest = getOAuthConsentRequest(response);
     if (consentRequest) {
@@ -296,6 +411,7 @@ async function processAgentResponse(initialResponse, originalMessage) {
     const responseText = extractResponseText(response);
     if (responseText) {
       addMessage("assistant", responseText);
+      await persistMessage("assistant", responseText);
     }
 
     const approvalRequests = getMcpApprovalRequests(response);
@@ -305,6 +421,7 @@ async function processAgentResponse(initialResponse, originalMessage) {
           `The agent returned no text. Response status: ${response.status ?? "unknown"}.`,
         );
       }
+      await refreshConversationList();
       return;
     }
 
@@ -328,29 +445,84 @@ async function processAgentResponse(initialResponse, originalMessage) {
 }
 
 function resetConversation() {
+  activeConversationId = undefined;
   previousResponseId = undefined;
   oauthConsentPending = false;
-  messageList.replaceChildren();
-  addMessage("assistant", "A new conversation is ready. What would you like to know?");
+  showConversationPrompt(
+    "A new conversation is ready. What would you like to know?",
+  );
   formStatus.textContent = "";
   formStatus.className = "form-status";
-  input.disabled = false;
-  sendButton.disabled = false;
+  renderConversationOptions();
+  setInteractionDisabled(false);
   input.focus();
 }
 
-function showAuthenticatedView() {
+function setInteractionDisabled(disabled) {
+  requestInProgress = disabled;
+  input.disabled = disabled;
+  sendButton.disabled = disabled;
+  conversationSelect.disabled = disabled;
+  deleteConversationButton.disabled = disabled || !activeConversationId;
+  clearHistoryButton.disabled = disabled || conversations.length === 0;
+  if (newChatButton) {
+    newChatButton.disabled = disabled;
+  }
+}
+
+async function deleteActiveConversation() {
+  if (
+    !activeConversationId ||
+    !window.confirm("Delete this conversation and all of its messages?")
+  ) {
+    return;
+  }
+
+  setInteractionDisabled(true);
+  try {
+    await authenticatedFetch(
+      `/api/conversations/${encodeURIComponent(activeConversationId)}`,
+      { method: "DELETE" },
+    );
+    activeConversationId = undefined;
+    previousResponseId = undefined;
+    await initializeHistory();
+  } finally {
+    setInteractionDisabled(false);
+  }
+}
+
+async function clearHistory() {
+  if (
+    !window.confirm(
+      "Clear all of your saved conversations? This cannot be undone.",
+    )
+  ) {
+    return;
+  }
+
+  setInteractionDisabled(true);
+  try {
+    await authenticatedFetch("/api/conversations", { method: "DELETE" });
+    conversations = [];
+    resetConversation();
+  } finally {
+    setInteractionDisabled(false);
+  }
+}
+
+async function showAuthenticatedView() {
   signedOut.hidden = true;
   chatPanel.hidden = false;
 
   const username = document.createElement("span");
   username.textContent = account.name || account.username;
 
-  const resetButton = document.createElement("button");
-  resetButton.className = "button";
-  resetButton.type = "button";
-  resetButton.textContent = "New chat";
-  resetButton.addEventListener("click", resetConversation);
+  newChatButton = document.createElement("button");
+  newChatButton.className = "button";
+  newChatButton.type = "button";
+  newChatButton.textContent = "New chat";
+  newChatButton.addEventListener("click", resetConversation);
 
   const logout = document.createElement("button");
   logout.className = "button";
@@ -363,8 +535,11 @@ function showAuthenticatedView() {
     });
   });
 
-  accountActions.replaceChildren(username, resetButton, logout);
-  scrollMessagesToBottom("auto");
+  accountActions.replaceChildren(username, newChatButton, logout);
+  setInteractionDisabled(true);
+  formStatus.textContent = "Loading chat history...";
+  await initializeHistory();
+  setInteractionDisabled(false);
   input.focus();
 }
 
@@ -394,7 +569,7 @@ async function initializeAuthentication() {
 
   if (account) {
     authClient.setActiveAccount(account);
-    showAuthenticatedView();
+    await showAuthenticatedView();
   } else {
     signedOut.hidden = false;
     chatPanel.hidden = true;
@@ -407,6 +582,40 @@ signInButton.addEventListener("click", () => {
   });
 });
 
+conversationSelect.addEventListener("change", async () => {
+  const conversationId = conversationSelect.value;
+  if (!conversationId) {
+    resetConversation();
+    return;
+  }
+
+  setInteractionDisabled(true);
+  try {
+    await openConversation(conversationId);
+  } catch (error) {
+    formStatus.textContent = error.message;
+    formStatus.className = "form-status error";
+  } finally {
+    setInteractionDisabled(false);
+  }
+});
+
+deleteConversationButton.addEventListener("click", () => {
+  deleteActiveConversation().catch((error) => {
+    formStatus.textContent = error.message;
+    formStatus.className = "form-status error";
+    setInteractionDisabled(false);
+  });
+});
+
+clearHistoryButton.addEventListener("click", () => {
+  clearHistory().catch((error) => {
+    formStatus.textContent = error.message;
+    formStatus.className = "form-status error";
+    setInteractionDisabled(false);
+  });
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const message = input.value.trim();
@@ -414,14 +623,16 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  addMessage("user", message);
   input.value = "";
-  input.disabled = true;
-  sendButton.disabled = true;
-  formStatus.textContent = "The agent is working...";
+  setInteractionDisabled(true);
+  formStatus.textContent = "Saving your message...";
   formStatus.className = "form-status";
 
   try {
+    await ensureConversation(message);
+    addMessage("user", message);
+    await persistMessage("user", message);
+    formStatus.textContent = "The agent is working...";
     const result = await callAgent(message);
     await processAgentResponse(result, message);
     formStatus.textContent = "";
@@ -431,8 +642,7 @@ form.addEventListener("submit", async (event) => {
     formStatus.className = "form-status error";
   } finally {
     if (!oauthConsentPending) {
-      input.disabled = false;
-      sendButton.disabled = false;
+      setInteractionDisabled(false);
       input.focus();
     }
   }

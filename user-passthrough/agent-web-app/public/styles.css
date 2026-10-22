@@ -73,6 +73,7 @@ body {
 }
 
 button,
+select,
 textarea {
   font: inherit;
 }
@@ -230,12 +231,40 @@ h2 {
   opacity: 0.65;
 }
 
+.button.danger {
+  color: var(--cp-danger);
+}
+
 .chat-panel {
   display: grid;
   min-height: 0;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: auto 1fr auto;
   overflow: hidden;
   background: var(--cp-bg-elevated);
+}
+
+.history-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--cp-border);
+  background: var(--cp-panel);
+}
+
+.history-bar select {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--cp-border);
+  border-radius: 0.625rem;
+  outline: none;
+  background: var(--cp-surface);
+  color: var(--cp-text);
+}
+
+.history-bar select:focus {
+  border-color: var(--cp-text);
+  box-shadow: 0 0 0 3px var(--cp-border);
 }
 
 .messages {
@@ -473,6 +502,15 @@ textarea:focus {
 
   .messages {
     padding: 24px 14px 36px;
+  }
+
+  .history-bar {
+    flex-wrap: wrap;
+    padding: 8px 12px;
+  }
+
+  .history-bar select {
+    flex-basis: 100%;
   }
 
   .composer {

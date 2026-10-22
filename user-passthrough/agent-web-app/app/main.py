@@ -5,11 +5,23 @@ from typing import Annotated, AsyncIterator
 
 import httpx
 import uvicorn
+from azure.cosmos.exceptions import CosmosHttpResponseError
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from .auth import TokenValidator
+from .auth import AuthenticatedPrincipal, TokenValidator
+from .chat_history import (
+    ChatHistoryStore,
+    ConversationNotFoundError,
+    CosmosChatHistoryStore,
+    MemoryChatHistoryStore,
+)
+from .chat_models import (
+    CreateConversationRequest,
+    CreateMessageRequest,
+    UpdateConversationRequest,
+)
 from .config import Settings
 from .response_request import AgentRequest
 
@@ -19,9 +31,13 @@ logger = logging.getLogger(__name__)
 PUBLIC_DIRECTORY = Path(__file__).resolve().parent.parent / "public"
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    history_store: ChatHistoryStore | None = None,
+    token_validator: TokenValidator | None = None,
+) -> FastAPI:
     app_settings = settings or Settings()
-    token_validator = TokenValidator(app_settings)
+    validator = token_validator or TokenValidator(app_settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -31,7 +47,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             transport=transport,
         ) as client:
             app.state.http_client = client
-            yield
+            app.state.history_store = (
+                history_store
+                if history_store is not None
+                else (
+                    CosmosChatHistoryStore(app_settings)
+                    if app_settings.chat_history_backend == "cosmos"
+                    else MemoryChatHistoryStore()
+                )
+            )
+            try:
+                yield
+            finally:
+                if (
+                    history_store is None
+                    and app_settings.chat_history_backend == "cosmos"
+                ):
+                    await app.state.history_store.close()
 
     app = FastAPI(
         title="Foundry Agent Web App",
@@ -43,8 +75,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     async def authorize(
         authorization: Annotated[str | None, Header()] = None,
-    ) -> str:
-        return await token_validator.validate(authorization)
+    ) -> AuthenticatedPrincipal:
+        return await validator.validate(authorization)
 
     @app.middleware("http")
     async def add_security_headers(request: Request, call_next):
@@ -84,6 +116,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             headers=error.headers,
         )
 
+    @app.exception_handler(ConversationNotFoundError)
+    async def handle_conversation_not_found(
+        _request: Request,
+        _error: ConversationNotFoundError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"error": "The conversation was not found."},
+        )
+
+    @app.exception_handler(CosmosHttpResponseError)
+    async def handle_cosmos_error(
+        _request: Request,
+        error: CosmosHttpResponseError,
+    ) -> JSONResponse:
+        logger.error(
+            "Cosmos DB request failed with status %s",
+            error.status_code,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"error": "Chat history storage is unavailable."},
+        )
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -96,11 +152,97 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "apiScope": app_settings.foundry_api_scope,
         }
 
+    @app.get("/api/conversations")
+    async def list_conversations(
+        raw_request: Request,
+        principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
+    ) -> list[dict]:
+        return await raw_request.app.state.history_store.list_conversations(
+            principal.object_id,
+        )
+
+    @app.post("/api/conversations", status_code=status.HTTP_201_CREATED)
+    async def create_conversation(
+        conversation: CreateConversationRequest,
+        raw_request: Request,
+        principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
+    ) -> dict:
+        return await raw_request.app.state.history_store.create_conversation(
+            principal.object_id,
+            conversation.title,
+        )
+
+    @app.delete("/api/conversations")
+    async def clear_history(
+        raw_request: Request,
+        principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
+    ) -> dict[str, int]:
+        deleted = await raw_request.app.state.history_store.clear_history(
+            principal.object_id,
+        )
+        return {"deleted": deleted}
+
+    @app.get("/api/conversations/{conversation_id}")
+    async def get_conversation(
+        conversation_id: str,
+        raw_request: Request,
+        principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
+    ) -> dict:
+        return await raw_request.app.state.history_store.get_conversation(
+            principal.object_id,
+            conversation_id,
+        )
+
+    @app.patch("/api/conversations/{conversation_id}")
+    async def update_conversation(
+        conversation_id: str,
+        update: UpdateConversationRequest,
+        raw_request: Request,
+        principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
+    ) -> dict:
+        return await raw_request.app.state.history_store.update_response_id(
+            principal.object_id,
+            conversation_id,
+            update.previous_response_id,
+        )
+
+    @app.post(
+        "/api/conversations/{conversation_id}/messages",
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_message(
+        conversation_id: str,
+        message: CreateMessageRequest,
+        raw_request: Request,
+        principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
+    ) -> dict:
+        return await raw_request.app.state.history_store.add_message(
+            principal.object_id,
+            conversation_id,
+            message.role,
+            message.content,
+        )
+
+    @app.delete(
+        "/api/conversations/{conversation_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    async def delete_conversation(
+        conversation_id: str,
+        raw_request: Request,
+        principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
+    ) -> Response:
+        await raw_request.app.state.history_store.delete_conversation(
+            principal.object_id,
+            conversation_id,
+        )
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @app.post("/api/responses")
     async def proxy_response(
         request: AgentRequest,
         raw_request: Request,
-        authorization: Annotated[str, Depends(authorize)],
+        principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
     ) -> Response:
         request_body = {
             "input": (
@@ -116,7 +258,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             upstream = await raw_request.app.state.http_client.post(
                 app_settings.apim_responses_url,
                 headers={
-                    "Authorization": authorization,
+                    "Authorization": principal.authorization,
                     "Content-Type": "application/json",
                     "Ocp-Apim-Subscription-Key": (
                         app_settings.apim_subscription_key

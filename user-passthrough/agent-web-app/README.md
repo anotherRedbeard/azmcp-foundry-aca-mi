@@ -77,8 +77,17 @@ rejects later tool calls.
 The SPA registration, delegated Foundry permission, APIM `POST /responses`
 operation, CORS policy, token validation, bearer-token forwarding, and fixed
 `agent_reference` are established by the core deployment guide and workflow.
-The SPA stores the latest response ID in memory for multi-turn conversations
-and clears it when **New chat** is selected.
+The deployed application stores conversation metadata, messages, and the
+latest Foundry response ID in Azure Cosmos DB for NoSQL. After sign-in, the UI
+automatically opens the most recently updated conversation. Users can select a
+different saved conversation, delete one conversation, or clear all of their
+history.
+
+Cosmos data is partitioned by the validated Entra `oid` claim. FastAPI derives
+that value from the access token and never accepts a user ID from the browser.
+The Container App uses its system-assigned managed identity for Cosmos data
+access. The existing user-assigned identity remains dedicated to ACR image
+pulls.
 
 ### Subscription key
 
@@ -138,6 +147,7 @@ Copy those values into `.env`.
 | `FOUNDRY_API_SCOPE` | `FOUNDRY_API_SCOPE` deployment output |
 | `APIM_RESPONSES_URL` | `RESPONSES_API_URL` deployment output |
 | `APIM_SUBSCRIPTION_KEY` | Primary key for the APIM test subscription |
+| `CHAT_HISTORY_BACKEND` | `memory` for the local walkthrough; Azure sets `cosmos` |
 | `PORT` | FastAPI port; defaults to `3000` |
 
 Retrieve the subscription key from **API Management > Subscriptions** in the
@@ -145,6 +155,20 @@ Azure portal. Select the test subscription created by the infrastructure
 deployment and copy its primary key. Store the key only in `.env`.
 
 Only `ENTRA_TENANT_ID`, `ENTRA_SPA_CLIENT_ID`, and `FOUNDRY_API_SCOPE` are delivered to the SPA by `/api/config`. The APIM URL and subscription key remain server-side.
+
+The default local `memory` backend keeps conversations across browser refreshes
+while FastAPI is running and clears them when the process stops. To test the
+real Cosmos backend locally:
+
+1. Set `CHAT_HISTORY_BACKEND=cosmos`.
+2. Set `COSMOS_ENDPOINT`, `COSMOS_DATABASE_NAME`, and
+   `COSMOS_CONTAINER_NAME`.
+3. Run `az login`.
+4. Grant your signed-in developer identity **Cosmos DB Built-in Data
+   Contributor** on the chat-history container.
+
+Do not use account keys or connection strings. The deployed account disables
+local/key authentication.
 
 ## 2. Run locally
 
@@ -205,13 +229,16 @@ The UI provides:
 - Independently scrolling message pane
 - Automatic scrolling to the newest message
 - Multi-line composer with Enter-to-send
-- New-chat and sign-out controls
+- Automatic restore of the latest saved conversation
+- Saved-conversation selection
+- New-chat, delete-chat, clear-history, and sign-out controls
 
 ## 3. Validate
 
 ```bash
 npm run check
 python -m compileall app
+python -m unittest discover -s test -v
 ```
 
 Optionally confirm that the production container image builds:
@@ -258,8 +285,16 @@ the target subscription.
    add it under the **Web** platform.
 8. Open the application URL and sign in.
 
-The web workflow deploys only this application to its own Azure Container Apps
-environment and resource group.
+The web workflow also deploys a serverless Cosmos DB for NoSQL account,
+database, and `/userId`-partitioned container in the web resource group. It
+disables key authentication, enables a system-assigned identity on the
+Container App, and grants that identity **Cosmos DB Built-in Data
+Contributor** only on the chat-history container. Chat records remain until
+the user deletes one conversation or clears all history.
+
+Serverless Cosmos DB has no provisioned-throughput floor. Storage and request
+units are usage-based; a private endpoint is not included in this public POC
+deployment.
 
 ## Troubleshooting
 
@@ -270,6 +305,17 @@ Inspect the FastAPI logs, the browser request to `/api/responses`, and APIM Appl
 ### `401 AzureApiManagementKey`
 
 Set `APIM_SUBSCRIPTION_KEY` to a valid subscription key attached to a product containing the Responses API.
+
+### `Chat history storage is unavailable`
+
+For Azure, confirm that the Container App has a system-assigned identity, that
+the identity has **Cosmos DB Built-in Data Contributor** on the deployed
+chat-history container, and that `CHAT_HISTORY_BACKEND=cosmos` plus the three
+`COSMOS_*` settings are present.
+
+For local Cosmos testing, confirm that `az account show` succeeds and your
+signed-in identity has the same Cosmos data-plane role. Use
+`CHAT_HISTORY_BACKEND=memory` when Cosmos persistence is not needed locally.
 
 ### Unexpected issuer or audience
 

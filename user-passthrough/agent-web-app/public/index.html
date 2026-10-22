@@ -41,6 +41,19 @@
       </section>
 
       <section id="chat-panel" class="chat-panel" hidden>
+        <div class="history-bar">
+          <label class="sr-only" for="conversation-select">Saved conversation</label>
+          <select id="conversation-select" aria-label="Saved conversation">
+            <option value="">New conversation</option>
+          </select>
+          <button id="delete-conversation-button" class="button" type="button" disabled>
+            Delete chat
+          </button>
+          <button id="clear-history-button" class="button danger" type="button" disabled>
+            Clear history
+          </button>
+        </div>
+
         <div id="messages" class="messages" aria-live="polite">
           <div class="message-list">
             <article class="message assistant">

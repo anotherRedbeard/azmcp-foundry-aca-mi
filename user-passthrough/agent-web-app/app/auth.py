@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 
 import jwt
 from fastapi import HTTPException, status
@@ -8,6 +9,12 @@ from jwt import PyJWKClient
 from .config import Settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AuthenticatedPrincipal:
+    authorization: str
+    object_id: str
 
 
 class TokenValidator:
@@ -21,7 +28,10 @@ class TokenValidator:
             f"{settings.entra_tenant_id}/discovery/v2.0/keys"
         )
 
-    async def validate(self, authorization: str | None) -> str:
+    async def validate(
+        self,
+        authorization: str | None,
+    ) -> AuthenticatedPrincipal:
         prefix = "Bearer "
         if not authorization or not authorization.startswith(prefix):
             raise HTTPException(
@@ -67,4 +77,14 @@ class TokenValidator:
                 detail="The token was not issued to this SPA.",
             )
 
-        return authorization
+        object_id = claims.get("oid")
+        if not isinstance(object_id, str) or not object_id.strip():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The token does not identify an Entra user.",
+            )
+
+        return AuthenticatedPrincipal(
+            authorization=authorization,
+            object_id=object_id,
+        )

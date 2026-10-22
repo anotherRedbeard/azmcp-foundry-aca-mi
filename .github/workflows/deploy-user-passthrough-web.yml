@@ -148,6 +148,7 @@ jobs:
             --output json)"
 
           echo "url=$(jq -r '.appUrl.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
+          echo "cosmosAccountName=$(jq -r '.cosmosAccountName.value' <<< "$outputs")" >> "$GITHUB_OUTPUT"
 
       - name: Verify application health
         shell: bash
@@ -172,6 +173,7 @@ jobs:
             echo "- URL: ${{ steps.app.outputs.url }}"
             echo "- Resource group: \`${{ steps.foundation.outputs.resourceGroupName }}\`"
             echo "- Container App: \`$APP_NAME\`"
+            echo "- Cosmos DB account: \`${{ steps.app.outputs.cosmosAccountName }}\`"
             echo
             echo "> The APIM subscription key is currently the placeholder \`replace-before-use\`. Replace the \`apim-subscription-key\` Container App secret before testing agent requests."
             echo

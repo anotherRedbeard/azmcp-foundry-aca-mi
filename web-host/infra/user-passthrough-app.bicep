@@ -34,6 +34,18 @@ param apimResponsesUrl string
 @description('User-passthrough APIM subscription key. Replace the placeholder after deployment.')
 param apimSubscriptionKey string
 
+@description('Cosmos DB for NoSQL account name used for chat history.')
+param cosmosAccountName string = 'cosmos-${uniqueString(subscription().id, resourceGroup().id, appName)}'
+
+@description('Cosmos DB database name used for chat history.')
+param cosmosDatabaseName string = 'chat-history'
+
+@description('Cosmos DB container name used for chat history.')
+param cosmosContainerName string = 'conversations'
+
+var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
+var cosmosContainerDataScope = '${cosmosAccount.id}/dbs/${cosmosDatabaseName}/colls/${cosmosContainerName}'
+
 resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
   name: environmentName
 }
@@ -46,6 +58,82 @@ resource pullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-
   name: pullIdentityName
 }
 
+resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
+  name: cosmosAccountName
+  location: location
+  tags: {
+    product: 'azmcp'
+    identityModel: 'user-passthrough'
+    workload: 'chat-history'
+  }
+  kind: 'GlobalDocumentDB'
+  properties: {
+    databaseAccountOfferType: 'Standard'
+    disableLocalAuth: true
+    minimalTlsVersion: 'Tls12'
+    publicNetworkAccess: 'Enabled'
+    locations: [
+      {
+        locationName: location
+        failoverPriority: 0
+        isZoneRedundant: false
+      }
+    ]
+    consistencyPolicy: {
+      defaultConsistencyLevel: 'Session'
+    }
+    capabilities: [
+      {
+        name: 'EnableServerless'
+      }
+    ]
+  }
+}
+
+resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
+  parent: cosmosAccount
+  name: cosmosDatabaseName
+  properties: {
+    resource: {
+      id: cosmosDatabaseName
+    }
+  }
+}
+
+resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: cosmosContainerName
+  properties: {
+    resource: {
+      id: cosmosContainerName
+      partitionKey: {
+        paths: [
+          '/userId'
+        ]
+        kind: 'Hash'
+        version: 2
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          {
+            path: '/*'
+          }
+        ]
+        excludedPaths: [
+          {
+            path: '/content/?'
+          }
+          {
+            path: '/"_etag"/?'
+          }
+        ]
+      }
+    }
+  }
+}
+
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
@@ -54,7 +142,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     identityModel: 'user-passthrough'
   }
   identity: {
-    type: 'UserAssigned'
+    type: 'SystemAssigned, UserAssigned'
     userAssignedIdentities: {
       '${pullIdentity.id}': {}
     }
@@ -119,6 +207,26 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'APIM_SUBSCRIPTION_KEY'
               secretRef: 'apim-subscription-key'
             }
+            {
+              name: 'AZURE_HOSTED'
+              value: 'true'
+            }
+            {
+              name: 'CHAT_HISTORY_BACKEND'
+              value: 'cosmos'
+            }
+            {
+              name: 'COSMOS_ENDPOINT'
+              value: cosmosAccount.properties.documentEndpoint
+            }
+            {
+              name: 'COSMOS_DATABASE_NAME'
+              value: cosmosDatabaseName
+            }
+            {
+              name: 'COSMOS_CONTAINER_NAME'
+              value: cosmosContainerName
+            }
           ]
           resources: {
             cpu: json('0.25')
@@ -171,5 +279,17 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
+  parent: cosmosAccount
+  name: guid(cosmosAccount.id, app.id, cosmosDataContributorRoleId)
+  properties: {
+    roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
+    principalId: app.identity.principalId
+    scope: cosmosContainerDataScope
+  }
+}
+
 output appName string = app.name
 output appUrl string = 'https://${app.properties.configuration.ingress.fqdn}'
+output cosmosAccountName string = cosmosAccount.name
+output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
