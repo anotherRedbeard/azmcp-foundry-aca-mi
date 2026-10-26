@@ -17,6 +17,7 @@ os.environ.update(
 from fastapi.testclient import TestClient
 
 from app.auth import AuthenticatedPrincipal
+from app.chat_history import ConversationNotFoundError
 from app.config import Settings
 from app.main import create_app
 
@@ -73,6 +74,20 @@ class InMemoryHistoryStore:
         conversation["previousResponseId"] = previous_response_id
         return conversation
 
+    async def rename_conversation(
+        self,
+        user_id: str,
+        conversation_id: str,
+        title: str,
+    ) -> dict:
+        try:
+            conversation = self.items[user_id][conversation_id]
+        except KeyError as error:
+            raise ConversationNotFoundError(conversation_id) from error
+        conversation["title"] = title
+        conversation["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        return conversation
+
     async def add_message(
         self,
         user_id: str,
@@ -103,6 +118,10 @@ class InMemoryHistoryStore:
 
 
 class ChatApiTests(unittest.TestCase):
+    @staticmethod
+    def auth_headers(user_id: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {user_id}"}
+
     def setUp(self) -> None:
         self.store = InMemoryHistoryStore()
         app = create_app(
@@ -154,6 +173,69 @@ class ChatApiTests(unittest.TestCase):
         self.assertEqual(cleared.json(), {"deleted": 1})
         self.assertEqual(self.store.items["user-one"], {})
         self.assertEqual(len(self.store.items["user-two"]), 1)
+
+    def test_rename_conversation_only_updates_authenticated_user(self) -> None:
+        created = self.client.post(
+            "/api/conversations",
+            headers=self.auth_headers("user-one"),
+            json={"title": "Original title"},
+        ).json()
+
+        renamed = self.client.patch(
+            f"/api/conversations/{created['id']}",
+            headers=self.auth_headers("user-one"),
+            json={"title": "  Renamed chat  "},
+        )
+
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.json()["title"], "Renamed chat")
+        self.assertEqual(
+            self.store.items["user-one"][created["id"]]["title"],
+            "Renamed chat",
+        )
+
+        other_user = self.client.patch(
+            f"/api/conversations/{created['id']}",
+            headers=self.auth_headers("user-two"),
+            json={"title": "Not allowed"},
+        )
+        self.assertEqual(other_user.status_code, 404)
+
+    def test_rejects_invalid_conversation_updates(self) -> None:
+        created = self.client.post(
+            "/api/conversations",
+            headers=self.auth_headers("user-one"),
+            json={"title": "Conversation"},
+        ).json()
+
+        for body in (
+            {},
+            {"title": "   "},
+            {"title": "Renamed", "previousResponseId": "response-1"},
+        ):
+            with self.subTest(body=body):
+                response = self.client.patch(
+                    f"/api/conversations/{created['id']}",
+                    headers=self.auth_headers("user-one"),
+                    json=body,
+                )
+                self.assertEqual(response.status_code, 400)
+
+    def test_previous_response_id_update_remains_supported(self) -> None:
+        created = self.client.post(
+            "/api/conversations",
+            headers=self.auth_headers("user-one"),
+            json={"title": "Conversation"},
+        ).json()
+
+        updated = self.client.patch(
+            f"/api/conversations/{created['id']}",
+            headers=self.auth_headers("user-one"),
+            json={"previousResponseId": "response-1"},
+        )
+
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["previousResponseId"], "response-1")
 
     def test_rejects_unknown_message_fields(self) -> None:
         created = self.client.post(

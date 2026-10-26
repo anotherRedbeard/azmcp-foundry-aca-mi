@@ -41,6 +41,13 @@ class ChatHistoryStore(Protocol):
         previous_response_id: str,
     ) -> dict[str, Any]: ...
 
+    async def rename_conversation(
+        self,
+        user_id: str,
+        conversation_id: str,
+        title: str,
+    ) -> dict[str, Any]: ...
+
     async def add_message(
         self,
         user_id: str,
@@ -121,6 +128,17 @@ class MemoryChatHistoryStore:
     ) -> dict[str, Any]:
         conversation = self._get_conversation(user_id, conversation_id)
         conversation["previousResponseId"] = previous_response_id
+        conversation["updatedAt"] = utc_now()
+        return dict(conversation)
+
+    async def rename_conversation(
+        self,
+        user_id: str,
+        conversation_id: str,
+        title: str,
+    ) -> dict[str, Any]:
+        conversation = self._get_conversation(user_id, conversation_id)
+        conversation["title"] = title
         conversation["updatedAt"] = utc_now()
         return dict(conversation)
 
@@ -281,6 +299,31 @@ class CosmosChatHistoryStore:
                     "op": "replace",
                     "path": "/previousResponseId",
                     "value": previous_response_id,
+                },
+                {
+                    "op": "replace",
+                    "path": "/updatedAt",
+                    "value": utc_now(),
+                },
+            ],
+        )
+        return self._conversation_summary(updated)
+
+    async def rename_conversation(
+        self,
+        user_id: str,
+        conversation_id: str,
+        title: str,
+    ) -> dict[str, Any]:
+        await self._read_conversation(user_id, conversation_id)
+        updated = await self._container.patch_item(
+            item=conversation_id,
+            partition_key=user_id,
+            patch_operations=[
+                {
+                    "op": "replace",
+                    "path": "/title",
+                    "value": title,
                 },
                 {
                     "op": "replace",

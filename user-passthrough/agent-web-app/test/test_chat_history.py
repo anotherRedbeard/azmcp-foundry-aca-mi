@@ -28,11 +28,18 @@ class MemoryChatHistoryStoreTests(unittest.TestCase):
             conversation["id"],
             "response-1",
         )
+        renamed = await store.rename_conversation(
+            "user-one",
+            conversation["id"],
+            "Renamed conversation",
+        )
 
         loaded = await store.get_conversation(
             "user-one",
             conversation["id"],
         )
+        self.assertEqual(renamed["title"], "Renamed conversation")
+        self.assertEqual(loaded["title"], "Renamed conversation")
         self.assertEqual(loaded["previousResponseId"], "response-1")
         self.assertEqual(loaded["messages"][0]["content"], "Hello")
         self.assertEqual(await store.list_conversations("user-two"), [])
@@ -41,6 +48,12 @@ class MemoryChatHistoryStoreTests(unittest.TestCase):
             await store.get_conversation(
                 "user-two",
                 conversation["id"],
+            )
+        with self.assertRaises(ConversationNotFoundError):
+            await store.rename_conversation(
+                "user-two",
+                conversation["id"],
+                "Not allowed",
             )
 
     def test_delete_one_and_clear_all(self) -> None:

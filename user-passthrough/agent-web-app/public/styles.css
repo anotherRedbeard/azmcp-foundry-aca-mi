@@ -368,7 +368,7 @@ h2 {
   z-index: 20;
   top: 34px;
   right: 0;
-  width: 132px;
+  width: 148px;
   padding: 4px;
   border: 1px solid var(--cp-border);
   border-radius: 0.625rem;
@@ -376,17 +376,23 @@ h2 {
   box-shadow: var(--cp-shadow);
 }
 
+.conversation-rename,
 .conversation-delete {
   width: 100%;
   padding: 8px 10px;
   border: 0;
   border-radius: 0.625rem;
   background: transparent;
-  color: var(--cp-danger);
+  color: var(--cp-text);
   cursor: pointer;
   text-align: left;
 }
 
+.conversation-delete {
+  color: var(--cp-danger);
+}
+
+.conversation-rename:hover,
 .conversation-delete:hover {
   background: var(--cp-surface-soft);
 }

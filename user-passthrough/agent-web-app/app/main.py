@@ -206,6 +206,13 @@ def create_app(
         raw_request: Request,
         principal: Annotated[AuthenticatedPrincipal, Depends(authorize)],
     ) -> dict:
+        if update.title is not None:
+            return await raw_request.app.state.history_store.rename_conversation(
+                principal.object_id,
+                conversation_id,
+                update.title,
+            )
+        assert update.previous_response_id is not None
         return await raw_request.app.state.history_store.update_response_id(
             principal.object_id,
             conversation_id,

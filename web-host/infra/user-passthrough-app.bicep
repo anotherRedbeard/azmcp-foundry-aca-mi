@@ -19,7 +19,7 @@ param privateEndpointSubnetId string
 param cosmosPrivateDnsZoneId string
 
 @description('User-passthrough web Container App name.')
-param appName string = 'ca-azmcp-user-passthrough'
+param appName string = 'ca-azmcp-passthrough-private'
 
 @description('Fully qualified user-passthrough web application image.')
 param image string

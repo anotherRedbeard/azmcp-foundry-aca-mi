@@ -372,11 +372,16 @@ function renderConversationList() {
     menu.className = "conversation-menu";
     menu.hidden = true;
 
+    const renameButton = document.createElement("button");
+    renameButton.className = "conversation-rename";
+    renameButton.type = "button";
+    renameButton.textContent = "Rename chat";
+
     const deleteButton = document.createElement("button");
     deleteButton.className = "conversation-delete";
     deleteButton.type = "button";
     deleteButton.textContent = "Delete chat";
-    menu.append(deleteButton);
+    menu.append(renameButton, deleteButton);
     menuWrap.append(menuButton, menu);
     item.append(openButton, menuWrap);
     return item;
@@ -573,6 +578,45 @@ async function deleteConversation(conversationId) {
   }
 }
 
+async function renameConversation(conversationId) {
+  const conversation = conversations.find(
+    (item) => item.id === conversationId,
+  );
+  if (!conversation) {
+    return;
+  }
+
+  const enteredTitle = window.prompt("Rename chat", conversation.title);
+  if (enteredTitle === null) {
+    return;
+  }
+
+  const title = enteredTitle.trim();
+  if (!title) {
+    throw new Error("Chat name cannot be empty.");
+  }
+  if (title.length > 120) {
+    throw new Error("Chat name cannot exceed 120 characters.");
+  }
+  if (title === conversation.title) {
+    return;
+  }
+
+  setInteractionDisabled(true);
+  try {
+    await authenticatedFetch(
+      `/api/conversations/${encodeURIComponent(conversationId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ title }),
+      },
+    );
+    await refreshConversationList();
+  } finally {
+    setInteractionDisabled(false);
+  }
+}
+
 async function clearHistory() {
   if (
     !window.confirm(
@@ -677,6 +721,16 @@ conversationList.addEventListener("click", (event) => {
   if (event.target.closest(".conversation-delete")) {
     closeConversationMenus();
     deleteConversation(conversationId).catch((error) => {
+      formStatus.textContent = error.message;
+      formStatus.className = "form-status error";
+      setInteractionDisabled(false);
+    });
+    return;
+  }
+
+  if (event.target.closest(".conversation-rename")) {
+    closeConversationMenus();
+    renameConversation(conversationId).catch((error) => {
       formStatus.textContent = error.message;
       formStatus.className = "form-status error";
       setInteractionDisabled(false);
