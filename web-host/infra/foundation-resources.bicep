@@ -105,6 +105,9 @@ resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-0
     addressPrefix: privateEndpointSubnetPrefix
     privateEndpointNetworkPolicies: 'Disabled'
   }
+  dependsOn: [
+    containerAppsSubnet
+  ]
 }
 
 resource cosmosPrivateDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
