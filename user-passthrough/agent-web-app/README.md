@@ -172,7 +172,9 @@ real Cosmos backend locally:
    Contributor** on the chat-history container.
 
 Do not use account keys or connection strings. The deployed account disables
-local/key authentication.
+local/key authentication. Because the deployed account uses a private
+endpoint, the development machine must also have network and DNS connectivity
+to the web-host virtual network.
 
 ## 2. Run locally
 
@@ -261,6 +263,7 @@ Create the `user-passthrough-web-dev` GitHub Environment and add these secrets:
 | `AZURE_CLIENT_ID` | GitHub deployment application client ID |
 | `AZURE_TENANT_ID` | Azure tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | Target Azure subscription ID |
+| `APIM_SUBSCRIPTION_KEY` | Primary key for the APIM test subscription |
 
 Add a federated credential to the GitHub deployment application with:
 
@@ -274,32 +277,66 @@ Add a federated credential to the GitHub deployment application with:
 The deployment identity needs `Contributor` and `User Access Administrator` on
 the target subscription.
 
+Before deploying, confirm that `10.30.0.0/16` does not overlap any existing or
+future peered network. Change the workflow's VNet and subnet inputs when the
+default range is unavailable.
+
 1. Run **Deploy user-passthrough web app** from the repository's **Actions**
-   page.
+   page. Keep **Cosmos public network access** set to **Disabled** for a normal
+   deployment.
 2. Copy the resource group, Container App name, and application URL from the
    workflow summary.
-3. In the Azure portal, open the deployed Container App.
-4. Open **Security > Secrets** and select `apim-subscription-key`.
-5. Replace `replace-before-use` with the APIM test subscription's primary key,
-   then save the secret.
-6. Open **Application > Revisions and replicas**, select the active revision,
-   and restart it so the application loads the new secret value.
-7. In Microsoft Entra ID, open the SPA app registration and go to
+3. In Microsoft Entra ID, open the SPA app registration and go to
    **Authentication > Single-page application**. Add the exact Container App
    application URL copied from the workflow summary as a redirect URI. Do not
    add it under the **Web** platform.
-8. Open the application URL and sign in.
+4. Open the application URL and sign in.
 
 The web workflow also deploys a serverless Cosmos DB for NoSQL account,
 database, and `/userId`-partitioned container in the web resource group. It
-disables key authentication, enables a system-assigned identity on the
-Container App, and grants that identity **Cosmos DB Built-in Data
-Contributor** only on the chat-history container. Chat records remain until
-the user deletes one conversation or clears all history.
+creates a dedicated VNet-integrated Container Apps environment, a Cosmos
+private endpoint, and the `privatelink.documents.azure.com` private DNS zone.
+The web application remains publicly reachable, but Cosmos public network and
+key authentication are disabled. The Container App uses its system-assigned
+identity with **Cosmos DB Built-in Data Contributor** only on the chat-history
+container. Chat records remain until the user deletes one conversation or
+clears all history.
 
 Serverless Cosmos DB has no provisioned-throughput floor. Storage and request
-units are usage-based; a private endpoint is not included in this public POC
-deployment.
+units are usage-based. The private endpoint and private DNS zone add their
+normal Azure networking charges.
+
+### Migrate an existing public deployment
+
+The workflow defaults create the long-term private architecture and do not
+create the old public-network Container Apps environment. For an existing
+deployment:
+
+1. Use distinct **Container Apps environment name** and **Web Container App
+   name** values so the private app is deployed in parallel.
+2. Set **Cosmos public network access** to **Enabled** for the first migration
+   run. The new environment resolves Cosmos through its private endpoint while
+   the old app temporarily retains its public path. This option works only when
+   the target environment's Azure Policy permits temporary public access. The
+   solution does not deploy policy exemptions or bypass tags.
+3. Add the new application URL as an Entra SPA redirect URI and validate
+   sign-in, agent responses, chat creation, reload, deletion, and clear
+   history.
+4. Rerun the workflow with **Cosmos public network access** set to
+   **Disabled**.
+5. Direct users to the new application URL.
+
+Traffic cutover and deletion of the old Container App and environment are
+manual decisions. The workflow does not remove them.
+
+### Optional administrator access through a VPN
+
+VPN gateways, VNet peering, and DNS forwarding are intentionally not deployed
+by this solution. If an administrator already has a VPN-connected VNet, they
+can separately peer it with the web-host VNet to reach Cosmos from a laptop.
+The networks must use non-overlapping address spaces, and the VPN-connected
+client must resolve `privatelink.documents.azure.com` through Azure Private DNS
+or an appropriate DNS forwarding path.
 
 ## Troubleshooting
 
@@ -316,11 +353,15 @@ Set `APIM_SUBSCRIPTION_KEY` to a valid subscription key attached to a product co
 For Azure, confirm that the Container App has a system-assigned identity, that
 the identity has **Cosmos DB Built-in Data Contributor** on the deployed
 chat-history container, and that `CHAT_HISTORY_BACKEND=cosmos` plus the three
-`COSMOS_*` settings are present.
+`COSMOS_*` settings are present. From a console in the Container App, confirm
+that the Cosmos account hostname resolves to a private address. Also confirm
+that the Cosmos private endpoint connection is approved and its private DNS
+zone group references `privatelink.documents.azure.com`.
 
 For local Cosmos testing, confirm that `az account show` succeeds and your
-signed-in identity has the same Cosmos data-plane role. Use
-`CHAT_HISTORY_BACKEND=memory` when Cosmos persistence is not needed locally.
+signed-in identity has the same Cosmos data-plane role and that the machine has
+private network and DNS connectivity. Use `CHAT_HISTORY_BACKEND=memory` when
+Cosmos persistence is not needed locally.
 
 ### History controls appear but no chats are saved
 

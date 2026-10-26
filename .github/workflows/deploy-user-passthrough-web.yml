@@ -23,11 +23,39 @@ on:
         required: true
         default: azmcp-passthrough-web-dev
         type: string
+      environment_name:
+        description: VNet-integrated Container Apps environment name
+        required: true
+        default: cae-azmcp-passthrough-web-dev-private
+        type: string
       app_name:
         description: Web Container App name
         required: true
-        default: ca-azmcp-user-passthrough
+        default: ca-azmcp-passthrough-private
         type: string
+      vnet_address_prefix:
+        description: Web-host virtual network address prefix
+        required: true
+        default: 10.30.0.0/16
+        type: string
+      container_apps_subnet_prefix:
+        description: Container Apps infrastructure subnet prefix
+        required: true
+        default: 10.30.0.0/24
+        type: string
+      private_endpoint_subnet_prefix:
+        description: Private endpoint subnet prefix
+        required: true
+        default: 10.30.1.0/27
+        type: string
+      cosmos_public_network_access:
+        description: Keep Disabled normally; use Enabled only during a temporary parallel migration
+        required: true
+        default: Disabled
+        type: choice
+        options:
+          - Disabled
+          - Enabled
 
 permissions:
   contents: read
@@ -42,7 +70,12 @@ env:
   CORE_RESOURCE_GROUP: ${{ inputs.core_resource_group }}
   CORE_DEPLOYMENT_NAME: user-passthrough-foundation
   NAMING_PREFIX: ${{ inputs.naming_prefix }}
+  ENVIRONMENT_NAME: ${{ inputs.environment_name }}
   APP_NAME: ${{ inputs.app_name }}
+  VNET_ADDRESS_PREFIX: ${{ inputs.vnet_address_prefix }}
+  CONTAINER_APPS_SUBNET_PREFIX: ${{ inputs.container_apps_subnet_prefix }}
+  PRIVATE_ENDPOINT_SUBNET_PREFIX: ${{ inputs.private_endpoint_subnet_prefix }}
+  COSMOS_PUBLIC_NETWORK_ACCESS: ${{ inputs.cosmos_public_network_access }}
 
 jobs:
   deploy:
@@ -61,6 +94,16 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate deployment secrets
+        shell: bash
+        env:
+          APIM_SUBSCRIPTION_KEY: ${{ secrets.APIM_SUBSCRIPTION_KEY }}
+        run: |
+          if [[ -z "$APIM_SUBSCRIPTION_KEY" ]]; then
+            echo "::error::Add APIM_SUBSCRIPTION_KEY to the selected GitHub Environment."
+            exit 1
+          fi
 
       - name: Read user-passthrough foundation outputs
         id: core
@@ -98,11 +141,15 @@ jobs:
             --parameters \
               location="$AZURE_LOCATION" \
               namingPrefix="$NAMING_PREFIX" \
+              environmentName="$ENVIRONMENT_NAME" \
+              virtualNetworkAddressPrefix="$VNET_ADDRESS_PREFIX" \
+              containerAppsSubnetPrefix="$CONTAINER_APPS_SUBNET_PREFIX" \
+              privateEndpointSubnetPrefix="$PRIVATE_ENDPOINT_SUBNET_PREFIX" \
             --only-show-errors \
             --query properties.outputs \
             --output json)"
 
-          for name in resourceGroupName environmentName registryName registryLoginServer pullIdentityName; do
+          for name in resourceGroupName environmentName registryName registryLoginServer pullIdentityName virtualNetworkName privateEndpointSubnetId cosmosPrivateDnsZoneId; do
             value="$(jq -r --arg name "$name" \
               '(to_entries
                 | map(select((.key | ascii_downcase) == ($name | ascii_downcase)))
@@ -121,12 +168,50 @@ jobs:
             user-passthrough/agent-web-app \
             --only-show-errors
 
-      - name: Deploy web application
-        id: app
+      - name: Preserve existing Cosmos DB tags
+        id: cosmos
         shell: bash
         run: |
           set -euo pipefail
+          base_tags='{"identityModel":"user-passthrough","product":"azmcp","workload":"chat-history"}'
+          cosmos_account_name="$(az deployment group show \
+            --resource-group "${{ steps.foundation.outputs.resourceGroupName }}" \
+            --name "user-passthrough-web" \
+            --query properties.outputs.cosmosAccountName.value \
+            --output tsv 2>/dev/null || true)"
+
+          if [[ -n "$cosmos_account_name" ]]; then
+            existing_tags="$(az cosmosdb show \
+              --resource-group "${{ steps.foundation.outputs.resourceGroupName }}" \
+              --name "$cosmos_account_name" \
+              --query tags \
+              --output json)"
+            cosmos_tags="$(jq -cn \
+              --argjson existing "$existing_tags" \
+              --argjson required "$base_tags" \
+              '$existing + $required')"
+          else
+            cosmos_tags="$base_tags"
+          fi
+
+          echo "accountName=$cosmos_account_name" >> "$GITHUB_OUTPUT"
+          echo "tags=$cosmos_tags" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy web application
+        id: app
+        shell: bash
+        env:
+          APIM_SUBSCRIPTION_KEY: ${{ secrets.APIM_SUBSCRIPTION_KEY }}
+          EXISTING_COSMOS_ACCOUNT_NAME: ${{ steps.cosmos.outputs.accountName }}
+          COSMOS_TAGS: ${{ steps.cosmos.outputs.tags }}
+        run: |
+          set -euo pipefail
           image="${{ steps.foundation.outputs.registryLoginServer }}/user-passthrough:${GITHUB_SHA}"
+          cosmos_parameters=()
+          if [[ -n "$EXISTING_COSMOS_ACCOUNT_NAME" ]]; then
+            cosmos_parameters+=(cosmosAccountName="$EXISTING_COSMOS_ACCOUNT_NAME")
+          fi
+
           outputs="$(az deployment group create \
             --name "user-passthrough-web" \
             --resource-group "${{ steps.foundation.outputs.resourceGroupName }}" \
@@ -136,13 +221,18 @@ jobs:
               environmentName="${{ steps.foundation.outputs.environmentName }}" \
               registryName="${{ steps.foundation.outputs.registryName }}" \
               pullIdentityName="${{ steps.foundation.outputs.pullIdentityName }}" \
+              privateEndpointSubnetId="${{ steps.foundation.outputs.privateEndpointSubnetId }}" \
+              cosmosPrivateDnsZoneId="${{ steps.foundation.outputs.cosmosPrivateDnsZoneId }}" \
               appName="$APP_NAME" \
               image="$image" \
               entraTenantId="${{ steps.core.outputs.azure_tenant_id }}" \
               spaClientId="${{ steps.core.outputs.spa_client_id }}" \
               foundryApiScope="${{ steps.core.outputs.foundry_api_scope }}" \
               apimResponsesUrl="${{ steps.core.outputs.responses_api_url }}" \
-              apimSubscriptionKey="replace-before-use" \
+              apimSubscriptionKey="$APIM_SUBSCRIPTION_KEY" \
+              cosmosPublicNetworkAccess="$COSMOS_PUBLIC_NETWORK_ACCESS" \
+              cosmosTags="$COSMOS_TAGS" \
+              "${cosmos_parameters[@]}" \
             --only-show-errors \
             --query properties.outputs \
             --output json)"
@@ -174,8 +264,8 @@ jobs:
             echo "- Resource group: \`${{ steps.foundation.outputs.resourceGroupName }}\`"
             echo "- Container App: \`$APP_NAME\`"
             echo "- Cosmos DB account: \`${{ steps.app.outputs.cosmosAccountName }}\`"
-            echo
-            echo "> The APIM subscription key is currently the placeholder \`replace-before-use\`. Replace the \`apim-subscription-key\` Container App secret before testing agent requests."
+            echo "- Virtual network: \`${{ steps.foundation.outputs.virtualNetworkName }}\`"
+            echo "- Cosmos public network access: \`$COSMOS_PUBLIC_NETWORK_ACCESS\`"
             echo
             echo "Add ${{ steps.app.outputs.url }} as a SPA redirect URI."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -10,7 +10,28 @@ param namingPrefix string = 'azmcp-webapps-dev'
 param resourceGroupName string = 'rg-${namingPrefix}'
 
 @description('Azure Container Apps environment name.')
-param environmentName string = 'cae-${namingPrefix}'
+param environmentName string = 'cae-${namingPrefix}-private'
+
+@description('Virtual network name for the web-host environment.')
+param virtualNetworkName string = 'vnet-${namingPrefix}'
+
+@description('Virtual network address prefix.')
+param virtualNetworkAddressPrefix string = '10.30.0.0/16'
+
+@description('Dedicated Container Apps infrastructure subnet name.')
+param containerAppsSubnetName string = 'snet-container-apps'
+
+@description('Dedicated Container Apps infrastructure subnet prefix.')
+param containerAppsSubnetPrefix string = '10.30.0.0/24'
+
+@description('Private endpoint subnet name.')
+param privateEndpointSubnetName string = 'snet-private-endpoints'
+
+@description('Private endpoint subnet prefix.')
+param privateEndpointSubnetPrefix string = '10.30.1.0/27'
+
+@description('Private DNS zone for Cosmos DB for NoSQL.')
+param cosmosPrivateDnsZoneName string = 'privatelink.documents.azure.com'
 
 @description('Log Analytics workspace name.')
 param logAnalyticsName string = 'log-${namingPrefix}'
@@ -36,6 +57,13 @@ module foundationResources 'foundation-resources.bicep' = {
   params: {
     location: location
     environmentName: environmentName
+    virtualNetworkName: virtualNetworkName
+    virtualNetworkAddressPrefix: virtualNetworkAddressPrefix
+    containerAppsSubnetName: containerAppsSubnetName
+    containerAppsSubnetPrefix: containerAppsSubnetPrefix
+    privateEndpointSubnetName: privateEndpointSubnetName
+    privateEndpointSubnetPrefix: privateEndpointSubnetPrefix
+    cosmosPrivateDnsZoneName: cosmosPrivateDnsZoneName
     logAnalyticsName: logAnalyticsName
     pullIdentityName: pullIdentityName
     registryName: registryName
@@ -47,3 +75,6 @@ output environmentName string = foundationResources.outputs.environmentName
 output registryName string = foundationResources.outputs.registryName
 output registryLoginServer string = foundationResources.outputs.registryLoginServer
 output pullIdentityName string = foundationResources.outputs.pullIdentityName
+output virtualNetworkName string = foundationResources.outputs.virtualNetworkName
+output privateEndpointSubnetId string = foundationResources.outputs.privateEndpointSubnetId
+output cosmosPrivateDnsZoneId string = foundationResources.outputs.cosmosPrivateDnsZoneId

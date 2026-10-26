@@ -12,6 +12,12 @@ param registryName string
 @description('Existing user-assigned identity used to pull images from ACR.')
 param pullIdentityName string
 
+@description('Resource ID of the subnet used for private endpoints.')
+param privateEndpointSubnetId string
+
+@description('Resource ID of the Cosmos DB private DNS zone.')
+param cosmosPrivateDnsZoneId string
+
 @description('User-passthrough web Container App name.')
 param appName string = 'ca-azmcp-user-passthrough'
 
@@ -31,17 +37,31 @@ param foundryApiScope string = 'https://ai.azure.com/user_impersonation'
 param apimResponsesUrl string
 
 @secure()
-@description('User-passthrough APIM subscription key. Replace the placeholder after deployment.')
+@description('User-passthrough APIM subscription key.')
 param apimSubscriptionKey string
 
 @description('Cosmos DB for NoSQL account name used for chat history.')
-param cosmosAccountName string = 'cosmos-${uniqueString(subscription().id, resourceGroup().id, appName)}'
+param cosmosAccountName string = 'cosmos-${uniqueString(subscription().id, resourceGroup().id, 'ca-azmcp-user-passthrough')}'
 
 @description('Cosmos DB database name used for chat history.')
 param cosmosDatabaseName string = 'chat-history'
 
 @description('Cosmos DB container name used for chat history.')
 param cosmosContainerName string = 'conversations'
+
+@description('Tags applied to the Cosmos DB account. Existing deployments should pass their current tags so environment-specific governance tags are preserved.')
+param cosmosTags object = {
+  product: 'azmcp'
+  identityModel: 'user-passthrough'
+  workload: 'chat-history'
+}
+
+@allowed([
+  'Disabled'
+  'Enabled'
+])
+@description('Cosmos public network access. Keep Disabled for normal deployments; Enabled is only for a temporary parallel migration.')
+param cosmosPublicNetworkAccess string = 'Disabled'
 
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
 var cosmosContainerDataScope = '${cosmosAccount.id}/dbs/${cosmosDatabaseName}/colls/${cosmosContainerName}'
@@ -61,17 +81,14 @@ resource pullIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-
 resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   name: cosmosAccountName
   location: location
-  tags: {
-    product: 'azmcp'
-    identityModel: 'user-passthrough'
-    workload: 'chat-history'
-  }
+  tags: cosmosTags
   kind: 'GlobalDocumentDB'
   properties: {
     databaseAccountOfferType: 'Standard'
     disableLocalAuth: true
+    enableAutomaticFailover: true
     minimalTlsVersion: 'Tls12'
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: cosmosPublicNetworkAccess
     locations: [
       {
         locationName: location
@@ -134,6 +151,47 @@ resource cosmosContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/con
   }
 }
 
+resource cosmosPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-07-01' = {
+  name: 'pep-${cosmosAccount.name}'
+  location: location
+  tags: {
+    product: 'azmcp'
+    identityModel: 'user-passthrough'
+    workload: 'chat-history'
+  }
+  properties: {
+    subnet: {
+      id: privateEndpointSubnetId
+    }
+    privateLinkServiceConnections: [
+      {
+        name: 'cosmos-sql'
+        properties: {
+          privateLinkServiceId: cosmosAccount.id
+          groupIds: [
+            'Sql'
+          ]
+        }
+      }
+    ]
+  }
+}
+
+resource cosmosPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-07-01' = {
+  parent: cosmosPrivateEndpoint
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'cosmos-sql'
+        properties: {
+          privateDnsZoneId: cosmosPrivateDnsZoneId
+        }
+      }
+    ]
+  }
+}
+
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
@@ -149,6 +207,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
   }
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
+    workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
       maxInactiveRevisions: 1
@@ -293,3 +352,4 @@ output appName string = app.name
 output appUrl string = 'https://${app.properties.configuration.ingress.fqdn}'
 output cosmosAccountName string = cosmosAccount.name
 output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
+output cosmosPrivateEndpointName string = cosmosPrivateEndpoint.name
