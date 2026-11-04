@@ -21,7 +21,7 @@ Browser -> Web app -> APIM -> Foundry agent -> APIM MCP server
 The editable diagram is [`foundry-apim-mcp-user-passthrough.excalidraw`](foundry-apim-mcp-user-passthrough.excalidraw).
 
 The MCP server enables the `storage`, `subscription`, `group`, `arm`, `monitor`,
-`compute`, `advisor`, and `optimization` namespaces with read-only tools.
+and `advisor` namespaces with read-only tools.
 Adding a namespace does not grant Azure permissions. Metrics and cost queries
 require the corresponding read permissions for the signed-in user's delegated
 identity on each target scope.

@@ -122,9 +122,7 @@ module acaInfrastructure 'modules/aca-infrastructure.bicep' = {
       'group'
       'arm'
       'monitor'
-      'compute'
       'advisor'
-      'optimization'
     ]
   }
 }
