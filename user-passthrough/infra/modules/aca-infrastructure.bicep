@@ -51,9 +51,8 @@ param userAssignedManagedIdentityClientId string
 @description('Federated token exchange audience for the target Azure cloud')
 param tokenExchangeAudience string
 
-@description('Azure MCP Server namespaces to enable. Must specify at least one namespace and no more than four.')
+@description('Azure MCP Server namespaces to enable. Must specify at least one namespace.')
 @minLength(1)
-@maxLength(4)
 param namespaces array
 
 var baseArgs = [

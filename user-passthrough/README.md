@@ -20,6 +20,12 @@ Browser -> Web app -> APIM -> Foundry agent -> APIM MCP server
 
 The editable diagram is [`foundry-apim-mcp-user-passthrough.excalidraw`](foundry-apim-mcp-user-passthrough.excalidraw).
 
+The MCP server enables the `storage`, `subscription`, `group`, `arm`, `monitor`,
+`compute`, `advisor`, and `optimization` namespaces with read-only tools.
+Adding a namespace does not grant Azure permissions. Metrics and cost queries
+require the corresponding read permissions for the signed-in user's delegated
+identity on each target scope.
+
 ## Prerequisites
 
 - Azure subscription access to deploy resources and create role assignments
@@ -227,7 +233,13 @@ Then, in the deployed Foundry project:
 
 1. Create the agent using the name configured in `responses.xml`.
 2. Use `AZURE_AI_GPT5_MINI_DEPLOYMENT_NAME` for initial testing or `AZURE_AI_GPT5_DEPLOYMENT_NAME` for higher-quality testing.
-3. Save and publish the agent.
+3. Copy the fenced prompt from [`../agent-system-instructions.md`](../agent-system-instructions.md)
+   into the agent's Instructions, replacing the existing instructions.
+4. Save and publish the agent.
+
+Infrastructure deployment does not update the agent's Instructions. After changing
+the prompt or enabled tools, refresh tool discovery as needed and test in a new
+conversation.
 
 ## 7. Create the OAuth MCP connection
 
