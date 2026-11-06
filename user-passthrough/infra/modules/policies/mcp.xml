@@ -1,21 +1,38 @@
 <policies>
   <inbound>
     <base />
-    <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Invalid delegated MCP token" require-expiration-time="true" require-scheme="Bearer">
+    <validate-jwt id="mcp-jwt" header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Invalid delegated MCP token" require-expiration-time="true" require-scheme="Bearer" output-token-variable-name="mcpJwt">
       <openid-config url="https://login.microsoftonline.com/__TENANT_ID__/v2.0/.well-known/openid-configuration" />
       <audiences>
         <audience>api://__MCP_CLIENT_ID__</audience>
         <audience>__MCP_CLIENT_ID__</audience>
       </audiences>
       <required-claims>
-        <claim name="scp" match="any" separator=" ">
-          <value>Mcp.Tools.ReadWrite</value>
-        </claim>
         <claim name="azp" match="any">
           <value>__API_CLIENT_ID__</value>
+          __CHATGPT_CLIENT_CLAIM__
         </claim>
       </required-claims>
     </validate-jwt>
+    <choose>
+      <when condition="@{
+        var jwt = context.Variables.GetValueOrDefault&lt;Jwt&gt;(&quot;mcpJwt&quot;);
+        return jwt == null
+          || !jwt.Claims.ContainsKey(&quot;scp&quot;)
+          || !jwt.Claims[&quot;scp&quot;].Any(value => value.Split(' ').Contains(&quot;Mcp.Tools.ReadWrite&quot;));
+      }">
+        <return-response>
+          <set-status code="403" reason="Forbidden" />
+          <set-header name="WWW-Authenticate" exists-action="override">
+            <value>Bearer error="insufficient_scope", resource_metadata="__METADATA_URL__", scope="__SCOPE_URI__"</value>
+          </set-header>
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"error":"insufficient_scope"}</set-body>
+        </return-response>
+      </when>
+    </choose>
     <set-variable name="isToolsList" value="@{
       if (!string.Equals(context.Request.Method, &quot;POST&quot;, StringComparison.OrdinalIgnoreCase) || context.Request.Body == null)
       {
@@ -151,6 +168,20 @@
     </choose>
   </outbound>
   <on-error>
+    <choose>
+      <when condition="@(context.LastError.PolicyId == &quot;mcp-jwt&quot;)">
+        <return-response>
+          <set-status code="401" reason="Unauthorized" />
+          <set-header name="WWW-Authenticate" exists-action="override">
+            <value>Bearer resource_metadata="__METADATA_URL__", scope="__SCOPE_URI__"</value>
+          </set-header>
+          <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+          </set-header>
+          <set-body>{"error":"unauthorized"}</set-body>
+        </return-response>
+      </when>
+    </choose>
     <base />
   </on-error>
 </policies>

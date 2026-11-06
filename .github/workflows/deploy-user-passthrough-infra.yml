@@ -49,6 +49,7 @@ jobs:
       APIM_PUBLISHER_EMAIL: ${{ vars.APIM_PUBLISHER_EMAIL }}
       SPA_CLIENT_ID: ${{ vars.SPA_CLIENT_ID }}
       API_CLIENT_ID: ${{ vars.API_CLIENT_ID }}
+      CHATGPT_CLIENT_ID: ${{ vars.CHATGPT_CLIENT_ID }}
       MCP_APP_CLIENT_ID: ${{ vars.MCP_APP_CLIENT_ID }}
       MCP_APP_SERVICE_PRINCIPAL_ID: ${{ vars.MCP_APP_SERVICE_PRINCIPAL_ID }}
       MCP_APP_IDENTIFIER_URI: ${{ vars.MCP_APP_IDENTIFIER_URI }}
@@ -127,6 +128,7 @@ jobs:
               apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
               spaClientId="$SPA_CLIENT_ID" \
               apiClientId="$API_CLIENT_ID" \
+              chatGptClientId="$CHATGPT_CLIENT_ID" \
             --only-show-errors \
             --output none
 
@@ -151,6 +153,7 @@ jobs:
               apimPublisherEmail="$APIM_PUBLISHER_EMAIL" \
               spaClientId="$SPA_CLIENT_ID" \
               apiClientId="$API_CLIENT_ID" \
+              chatGptClientId="$CHATGPT_CLIENT_ID" \
             --only-show-errors \
             --query properties.outputs \
             --output json)"
@@ -185,6 +188,8 @@ jobs:
             echo "| APIM gateway | $(value APIM_GATEWAY_URL) |"
             echo "| Responses API | $(value RESPONSES_API_URL) |"
             echo "| MCP API | $(value MCP_API_URL) |"
+            echo "| MCP protected resource metadata | $(value MCP_PROTECTED_RESOURCE_METADATA_URL) |"
+            echo "| MCP OAuth scope | \`$(value MCP_OAUTH_SCOPE)\` |"
             echo "| Foundry project | $(value AZURE_AI_PROJECT_ENDPOINT) |"
             echo "| MCP application ID | \`$(value ENTRA_APP_CLIENT_ID)\` |"
             echo "| MCP delegated scope ID | \`$(value ENTRA_APP_SCOPE_ID)\` |"

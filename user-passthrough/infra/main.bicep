@@ -37,6 +37,9 @@ param spaClientId string = ''
 @description('Confidential API client ID used by the Foundry OAuth2 MCP connection')
 param apiClientId string = ''
 
+@description('Optional approved ChatGPT OAuth client ID. Leave empty to allow only the existing Foundry client.')
+param chatGptClientId string = ''
+
 @description('gpt-5 deployment name')
 param gpt5DeploymentName string = 'gpt-5'
 
@@ -50,7 +53,7 @@ param gpt5ModelVersion string = '2025-08-07'
 param gpt5SkuName string = 'GlobalStandard'
 
 @description('gpt-5 deployment capacity in thousands of tokens per minute')
-param gpt5Capacity int = 200
+param gpt5Capacity int = 600
 
 @description('gpt-5-mini deployment name')
 param gpt5MiniDeploymentName string = 'gpt-5-mini'
@@ -65,7 +68,7 @@ param gpt5MiniModelVersion string = '2025-08-07'
 param gpt5MiniSkuName string = 'GlobalStandard'
 
 @description('gpt-5-mini deployment capacity in thousands of tokens per minute')
-param gpt5MiniCapacity int = 200
+param gpt5MiniCapacity int = 600
 
 var resolvedApimName = !empty(apimName)
   ? apimName
@@ -151,6 +154,7 @@ module apim 'modules/apim.bicep' = {
     tenantId: tenant().tenantId
     spaClientId: spaClientId
     apiClientId: apiClientId
+    chatGptClientId: chatGptClientId
     foundryResponsesUrl: '${foundry.outputs.projectEndpoint}/openai/v1'
     mcpBackendUrl: acaInfrastructure.outputs.containerAppUrl
     mcpClientId: mcpAppClientId
@@ -184,6 +188,8 @@ output APIM_GATEWAY_URL string = apim.outputs.gatewayUrl
 output APIM_PRINCIPAL_ID string = apim.outputs.principalId
 output RESPONSES_API_URL string = apim.outputs.responsesEndpoint
 output MCP_API_URL string = apim.outputs.mcpEndpoint
+output MCP_PROTECTED_RESOURCE_METADATA_URL string = apim.outputs.mcpProtectedResourceMetadataUrl
+output MCP_OAUTH_SCOPE string = apim.outputs.mcpOAuthScope
 output APIM_PRODUCT_ID string = apim.outputs.productId
 output APIM_TEST_SUBSCRIPTION_ID string = apim.outputs.subscriptionId
 

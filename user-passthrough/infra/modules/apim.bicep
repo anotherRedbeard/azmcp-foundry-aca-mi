@@ -19,6 +19,9 @@ param spaClientId string
 @description('Confidential OAuth client ID used by the Foundry MCP connection')
 param apiClientId string
 
+@description('Optional approved ChatGPT OAuth client ID')
+param chatGptClientId string = ''
+
 @description('Foundry Responses backend URL')
 param foundryResponsesUrl string
 
@@ -49,20 +52,6 @@ var responsesPolicy = replace(
   ),
   '__SPA_CLIENT_ID__',
   spaClientId
-)
-
-var mcpPolicy = replace(
-  replace(
-    replace(
-      loadTextContent('policies/mcp.xml'),
-      '__TENANT_ID__',
-      tenantId
-    ),
-    '__MCP_CLIENT_ID__',
-    mcpClientId
-  ),
-  '__API_CLIENT_ID__',
-  apiClientId
 )
 
 resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
@@ -240,14 +229,17 @@ resource mcpApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   }
 }
 
-resource mcpApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-preview' = {
-  parent: mcpApi
-  name: 'policy'
-  properties: {
-    format: 'rawxml'
-    value: mcpPolicy
+module mcpAuth 'mcp-auth.bicep' = {
+  name: 'mcp-auth-deployment'
+  params: {
+    apimName: apim.name
+    tenantId: tenantId
+    mcpClientId: mcpClientId
+    apiClientId: apiClientId
+    chatGptClientId: chatGptClientId
   }
   dependsOn: [
+    mcpApi
     mcpBackend
   ]
 }
@@ -286,5 +278,7 @@ output gatewayUrl string = apim.properties.gatewayUrl
 output principalId string = apim.identity.principalId
 output responsesEndpoint string = '${apim.properties.gatewayUrl}/agent/responses'
 output mcpEndpoint string = '${apim.properties.gatewayUrl}/mcp/user-passthrough/mcp'
+output mcpProtectedResourceMetadataUrl string = mcpAuth.outputs.protectedResourceMetadataUrl
+output mcpOAuthScope string = mcpAuth.outputs.scope
 output productId string = product.id
 output subscriptionId string = testSubscription.id

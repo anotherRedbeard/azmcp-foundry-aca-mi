@@ -21,7 +21,7 @@ param gpt5SkuName string = 'GlobalStandard'
 
 @description('Capacity in thousands of tokens per minute for the gpt-5 deployment')
 @minValue(1)
-param gpt5Capacity int = 200
+param gpt5Capacity int = 600
 
 @description('Deployment name for gpt-5-mini')
 param gpt5MiniDeploymentName string = 'gpt-5-mini'
@@ -37,7 +37,7 @@ param gpt5MiniSkuName string = 'GlobalStandard'
 
 @description('Capacity in thousands of tokens per minute for the gpt-5-mini deployment')
 @minValue(1)
-param gpt5MiniCapacity int = 200
+param gpt5MiniCapacity int = 600
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: accountName

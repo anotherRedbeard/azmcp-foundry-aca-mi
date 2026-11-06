@@ -314,6 +314,115 @@ the required configuration, local run, validation, and Azure deployment.
 
 ## Verify and troubleshoot
 
+### ChatGPT and other OAuth MCP clients
+
+The user-passthrough deployment publishes a resource-specific, unauthenticated
+protected resource metadata (PRM) endpoint:
+
+```text
+https://<apim-name>.azure-api.net/.well-known/oauth-protected-resource/mcp/user-passthrough/mcp
+```
+
+`MCP_PROTECTED_RESOURCE_METADATA_URL` and `MCP_OAUTH_SCOPE` are deployment
+outputs. The document describes the Azure MCP resource and tenant authorization
+server, not a particular client. Other MCP servers should have their own
+resource-specific metadata and token validation.
+
+The MCP policy returns `401` with `WWW-Authenticate` discovery information for
+missing/invalid tokens or rejected OAuth clients. A token from an approved
+client that lacks the delegated MCP scope receives `403` with an
+`insufficient_scope` challenge. The existing Foundry client remains approved;
+ChatGPT is disabled until a nonempty `chatGptClientId` is configured.
+
+**Deployment does not modify Entra registrations or consent.** Before testing
+ChatGPT, perform these manual steps in the tenant returned by `AZURE_TENANT_ID`:
+
+1. Find the existing MCP protected API registration using
+   `ENTRA_APP_CLIENT_ID`. Confirm `api.requestedAccessTokenVersion` is `2`.
+   Add the exact `MCP_API_URL` to its manifest's `identifierUris` array while
+   preserving the existing `api://<mcp-app-id>` URI, scope IDs, permissions,
+   and federated credentials. Do not replace the existing identifier URI.
+2. Keep the existing delegated `Mcp.Tools.ReadWrite` scope enabled. PRM
+   advertises its fully qualified HTTPS alias,
+   `<MCP_API_URL>/Mcp.Tools.ReadWrite`; both aliases address the same protected
+   API and permission. The name does not override the server's read-only
+   enforcement.
+3. Create a separate single-tenant **Web** OAuth client registration for
+   ChatGPT. Add the MCP protected API's delegated `Mcp.Tools.ReadWrite`
+   permission, and grant consent according to tenant policy. Do not add
+   downstream Azure permissions or Azure RBAC to this client.
+4. Create a client secret and enter its **value**, with the new client ID,
+   in ChatGPT's custom MCP connection OAuth settings. Use `MCP_API_URL` as
+   the server URL. Never store the secret in Bicep, PRM, GitHub variables,
+   or browser code.
+5. Copy the exact redirect URI shown by ChatGPT into the new registration's
+   **Authentication > Add platform > Web** settings. Do not assume a fixed
+   callback URL, enable implicit grants, or use client-credentials flow.
+6. Set the nonsecret GitHub Environment variable `CHATGPT_CLIENT_ID` to
+   that registration's client ID in the environment selected by the
+   user-passthrough infrastructure workflow. Its optional `chatGptClientId`
+   parameter adds this client to APIM's `azp` allowlist without replacing
+   Foundry. Redeploy the authentication configuration before testing.
+
+For an auth-only update to an existing deployment, deploy the same module used
+by the foundation template instead of reapplying Foundry/model or Container App
+settings. Load the existing deployment outputs and set `CHATGPT_CLIENT_ID` first:
+
+```bash
+az deployment group create \
+  --subscription "$AZURE_SUBSCRIPTION_ID" \
+  --resource-group "$AZURE_RESOURCE_GROUP" \
+  --name user-passthrough-mcp-auth \
+  --template-file user-passthrough/infra/modules/mcp-auth.bicep \
+  --parameters \
+    apimName="$APIM_NAME" \
+    tenantId="$AZURE_TENANT_ID" \
+    mcpClientId="$ENTRA_APP_CLIENT_ID" \
+    apiClientId="$API_CLIENT_ID" \
+    chatGptClientId="$CHATGPT_CLIENT_ID"
+```
+
+Keep `CHATGPT_CLIENT_ID` set in the GitHub Environment even after an auth-only
+deployment so a later foundation deployment preserves that client approval.
+Leaving it empty removes ChatGPT approval but preserves Foundry.
+
+**ChatGPT compatibility limitation:** OpenAI's current authentication guidance
+requires authorization-server discovery to advertise
+`code_challenge_methods_supported: ["S256"]`. The Entra discovery document
+inspected during this implementation did not advertise that field, although
+Entra supports PKCE. PRM and challenge deployment alone therefore does not
+establish end-to-end ChatGPT compatibility. If ChatGPT rejects discovery,
+resolve that authorization-server integration separately while preserving
+Entra delegated tokens for OBO. Adding the field to PRM, changing the issuer
+to an invented APIM issuer, or disabling token validation is not a fix.
+
+After deployment, check that metadata returns `200` JSON without a subscription
+key or bearer token, and that MCP requests without a token or with an invalid
+token return `401` with a `Bearer resource_metadata=...` challenge:
+
+```bash
+curl -i "$MCP_PROTECTED_RESOURCE_METADATA_URL"
+curl -i --max-time 20 "$MCP_API_URL"
+curl -i --max-time 20 \
+  -H "Authorization: Bearer invalid" \
+  "$MCP_API_URL"
+```
+
+Then test ChatGPT with the approved client and a signed-in user, and recheck an
+existing Foundry conversation. Confirm Azure results still reflect that user's
+RBAC. Local policy contract checks and Bicep compilation do not replace these
+live tests:
+
+```bash
+python3 -m unittest discover -s user-passthrough/infra/test -v
+```
+
+References: [OpenAI MCP authentication](https://developers.openai.com/plugins/build/auth),
+[Microsoft Entra MCP registration](https://learn.microsoft.com/en-us/entra/agent-id/secure-mcp-server-with-entra-id),
+and [OAuth protected resource metadata](https://www.rfc-editor.org/rfc/rfc9728.html).
+
+### Existing deployment troubleshooting
+
 Inspect Container App logs:
 
 ```bash
