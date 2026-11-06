@@ -53,7 +53,7 @@ param gpt5ModelVersion string = '2025-08-07'
 param gpt5SkuName string = 'GlobalStandard'
 
 @description('gpt-5 deployment capacity in thousands of tokens per minute')
-param gpt5Capacity int = 600
+param gpt5Capacity int = 200
 
 @description('gpt-5-mini deployment name')
 param gpt5MiniDeploymentName string = 'gpt-5-mini'
